@@ -2,7 +2,7 @@ import sqlite3
 import datetime
 import random
 
-DB = "boobs.db"
+DB = "bot.db"  # Имя базы, можно менять
 
 # === Работа с базой ===
 def db_conn():
@@ -18,6 +18,15 @@ def db_execute(query, params=(), fetch=False):
     conn.commit()
     conn.close()
     return data
+
+def init_db():
+    queries = [
+        "CREATE TABLE IF NOT EXISTS boobs(chat_id TEXT, user_id TEXT, size INTEGER, last_date TEXT, PRIMARY KEY(chat_id, user_id))",
+        "CREATE TABLE IF NOT EXISTS hui(chat_id TEXT, user_id TEXT, size INTEGER, last_date TEXT, PRIMARY KEY(chat_id, user_id))",
+        "CREATE TABLE IF NOT EXISTS klitor(chat_id TEXT, user_id TEXT, size INTEGER, last_date TEXT, PRIMARY KEY(chat_id, user_id))"
+    ]
+    for q in queries:
+        db_execute(q)
 
 # === Утилиты ===
 def today_date():
