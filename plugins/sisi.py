@@ -1,5 +1,5 @@
 from core import db_execute, today_date, random_delta
-from main import bot  # только bot, ничего больше
+from main import bot
 
 def change_boobs(chat_id, user_id):
     today = today_date()
