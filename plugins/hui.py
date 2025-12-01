@@ -1,34 +1,38 @@
-# plugins/hui.py
 import random
-from main import bot
-from core import db_execute, today_date
+import time
+from main import send
 
-GAME_TABLE = "hui"
+KEY = "hui"
 
-@bot.message_handler(commands=['hui'])
-def cmd_hui(message):
-    chat_id = str(message.chat.id)
-    user_id = str(message.from_user.id)
-    today = today_date()
+def register():
+    return KEY
 
-    row = db_execute(f"SELECT size, last_date FROM {GAME_TABLE} WHERE chat_id=? AND user_id=?", (chat_id, user_id), fetch=True)
-    if row:
-        size = row[0]["size"]
-        last = row[0]["last_date"]
+
+def handle(cmd, message, users):
+    if cmd != "/hui":
+        return False
+
+    user_id = str(message["from"]["id"])
+    chat_id = message["chat"]["id"]
+    name = message["from"].get("first_name", "Ты")
+
+    users.setdefault(user_id, {})
+    users[user_id].setdefault(KEY, {"value": 0, "last": 0})
+    data = users[user_id][KEY]
+
+    if data["last"] == int(time.time() // 86400):
+        send(chat_id, f"{name}, ты уже играла сегодня.\nРазмер: {data['value']} см")
+        return True
+
+    grow = random.randint(-10, 10)
+    new_value = max(0, data["value"] + grow)
+
+    data["value"] = new_value
+    data["last"] = int(time.time() // 86400)
+
+    if grow >= 0:
+        send(chat_id, f"{name}, твой хуй вырос на {grow} см.\nТеперь он {new_value} см")
     else:
-        size = 0
-        last = None
+        send(chat_id, f"{name}, твой хуй уменьшился на {abs(grow)} см.\nТеперь он {new_value} см")
 
-    if last == today:
-        bot.reply_to(message, f"Ой, уже играл сегодня 😅\nТекущий хуй — <b>{size}</b> см 🍌")
-        return
-
-    delta = random.randint(-10, 10)
-    new_size = max(0, size + delta)
-
-    db_execute(f"INSERT OR REPLACE INTO {GAME_TABLE} (chat_id, user_id, size, last_date) VALUES (?,?,?,?)",
-               (chat_id, user_id, new_size, today))
-
-    name = (message.from_user.first_name or message.from_user.username or "Игрок")
-    sign = f"{delta:+d}"
-    bot.reply_to(message, f"🍌 {name}, твой хуй вырос на <b>{sign}</b> см, теперь — <b>{new_size}</b> см 🍌")
+    return True
