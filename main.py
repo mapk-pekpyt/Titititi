@@ -1,22 +1,17 @@
 import os
-import importlib
 import telebot
 from core import init_db
+from plugins import load_plugins
 
 TOKEN = os.environ.get("BOT_TOKEN", "YOUR_TOKEN_HERE")
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
-# Инициализация БД
+# Инициализация базы
 init_db()
 
-# Автозагрузка плагинов из папки plugins
-PLUGIN_FOLDER = "plugins"
-for filename in os.listdir(PLUGIN_FOLDER):
-    if filename.endswith(".py") and filename != "__init__.py":
-        modulename = filename[:-3]
-        importlib.import_module(f"{PLUGIN_FOLDER}.{modulename}")
+# Загружаем плагины
+load_plugins(bot)
 
 # Запуск бота
-if __name__ == "__main__":
-    print("Бот запущен! 🚀")
+if __name__=="__main__":
     bot.infinity_polling(skip_pending=True)
