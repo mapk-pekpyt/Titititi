@@ -20,15 +20,53 @@ def db_execute(query, params=(), fetch=False):
     return data
 
 def init_db():
-    # Таблицы можно добавлять постепенно
-    db_execute("""CREATE TABLE IF NOT EXISTS users (
+    # Таблицы для будущих плагинов
+    db_execute("""
+    CREATE TABLE IF NOT EXISTS boobs (
         chat_id TEXT,
         user_id TEXT,
-        PRIMARY KEY(chat_id,user_id)
-    )""")
+        size INTEGER,
+        last_date TEXT,
+        PRIMARY KEY(chat_id, user_id)
+    )
+    """)
+    db_execute("""
+    CREATE TABLE IF NOT EXISTS klitor (
+        chat_id TEXT,
+        user_id TEXT,
+        size_mm INTEGER,
+        last_date TEXT,
+        PRIMARY KEY(chat_id, user_id)
+    )
+    """)
+    db_execute("""
+    CREATE TABLE IF NOT EXISTS hui (
+        chat_id TEXT,
+        user_id TEXT,
+        size_cm INTEGER,
+        last_date TEXT,
+        PRIMARY KEY(chat_id, user_id)
+    )
+    """)
 
-def random_delta(min_val=-10, max_val=10):
-    return random.randint(min_val, max_val)
-
-def today_date():
-    return datetime.date.today().isoformat()
+def change_size(table, chat_id, user_id, delta_range=(-10,10)):
+    today = datetime.date.today().isoformat()
+    chat, user = str(chat_id), str(user_id)
+    row = db_execute(f"SELECT * FROM {table} WHERE chat_id=? AND user_id=?", (chat, user), fetch=True)
+    if row:
+        last = row[0]["last_date"]
+        size_key = "size" if table=="boobs" else ("size_mm" if table=="klitor" else "size_cm")
+        size = row[0][size_key]
+    else:
+        last = None
+        size = 0
+    if last == today:
+        return 0, size
+    delta = random.randint(delta_range[0], delta_range[1])
+    if size + delta < 0:
+        delta = -size
+    new_size = size + delta
+    size_key = "size" if table=="boobs" else ("size_mm" if table=="klitor" else "size_cm")
+    db_execute(f"INSERT OR REPLACE INTO {table}(chat_id,user_id,{size_key},last_date) VALUES (?,?,?,?)",
+               (chat, user, new_size, today))
+    return delta, new_size
