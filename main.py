@@ -1,30 +1,87 @@
-# main.py
-import os
-import importlib
-from telebot import TeleBot
-from core import init_db
+import time
+import requests
+import traceback
+from core import load_plugins, load_users, save_users
 
-TOKEN = os.environ.get("BOT_TOKEN", None)
-if not TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set in environment variables")
+TOKEN = os.getenv("BOT_TOKEN") or "ВСТАВЬ_СВОЙ_ТОКЕН"
+API = f"https://api.telegram.org/bot{TOKEN}"
 
-bot = TeleBot(TOKEN, parse_mode="HTML")
+ADMIN_USERNAME = "Sugar_Daddy_rip"
 
-# Инициализация базы (создаёт все таблицы)
-init_db()
+plugins = load_plugins()
+users = load_users()
 
-# Загружаем плагины из каталога plugins
-def load_plugins():
-    plugins_dir = os.path.join(os.path.dirname(__file__), "plugins")
-    for filename in os.listdir(plugins_dir):
-        if filename.endswith(".py") and filename != "__init__.py":
-            modulename = filename[:-3]
-            importlib.import_module(f"plugins.{modulename}")
 
-# загружаем
-load_plugins()
+def send(chat_id, text):
+    requests.post(f"{API}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": text
+    })
 
-# Запуск бота
+
+def handle_command(cmd, message):
+    username = message["from"].get("username", "")
+    chat_id = message["chat"]["id"]
+    user_id = str(message["from"]["id"])
+
+    if cmd.startswith("/price"):
+        # доступ только админу
+        if username != ADMIN_USERNAME:
+            send(chat_id, "⛔ У тебя нет доступа")
+            return
+
+        parts = cmd.split()
+        if len(parts) != 2:
+            send(chat_id, "Использование: /price 10")
+            return
+
+        new_price = int(parts[1])
+
+        users.setdefault("config", {})
+        users["config"]["mute_price"] = new_price
+        save_users(users)
+
+        send(chat_id, f"💰 Цена за 1 минуту мута теперь: {new_price}")
+        return
+
+    # Отправляем команду плагинам
+    for plugin in plugins.values():
+        try:
+            if plugin.handle(cmd, message, users):
+                save_users(users)
+                return
+        except Exception:
+            send(chat_id, "❌ Ошибка в плагине")
+            traceback.print_exc()
+
+    send(chat_id, "Неизвестная команда")
+
+
+def longpoll():
+    offset = 0
+    print("Бот запущен")
+
+    while True:
+        try:
+            r = requests.get(f"{API}/getUpdates", params={"offset": offset, "timeout": 50})
+            data = r.json()
+
+            if not data["ok"]:
+                time.sleep(1)
+                continue
+
+            for upd in data["result"]:
+                offset = upd["update_id"] + 1
+
+                if "message" in upd:
+                    text = upd["message"].get("text", "")
+                    if text.startswith("/"):
+                        handle_command(text.split()[0], upd["message"])
+
+        except Exception as e:
+            print("Ошибка:", e)
+            time.sleep(3)
+
+
 if __name__ == "__main__":
-    print("Bot started")
-    bot.infinity_polling(skip_pending=True)
+    longpoll()
