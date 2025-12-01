@@ -1,6 +1,13 @@
-from main import bot
-from core import today_date, random_delta, db_execute
+def register():
+    return "example"
 
-@bot.message_handler(commands=['ping'])
-def cmd_ping(message):
-    bot.reply_to(message, f"Pong! Сегодня: {today_date()}")
+
+def handle(cmd, message, users):
+    if cmd != "/test":
+        return False
+
+    chat_id = message["chat"]["id"]
+    from main import send
+
+    send(chat_id, "Плагин работает")
+    return True
