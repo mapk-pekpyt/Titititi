@@ -1,47 +1,28 @@
-import random
-import datetime
-from main import bot, db_execute, get_display_name
+from core import db_execute, today_date, random_delta
+from main import bot  # только bot, ничего больше
 
-TABLE = "boobs"
-
-# Инициализация таблицы
-db_execute(f"""
-CREATE TABLE IF NOT EXISTS {TABLE} (
-    chat_id TEXT,
-    user_id TEXT,
-    size INTEGER,
-    last_date TEXT,
-    PRIMARY KEY(chat_id, user_id)
-)
-""")
-
-def change_size(chat_id, user_id):
-    today = datetime.date.today().isoformat()
-    row = db_execute(f"SELECT size, last_date FROM {TABLE} WHERE chat_id=? AND user_id=?", (str(chat_id), str(user_id)), fetch=True)
+def change_boobs(chat_id, user_id):
+    today = today_date()
+    row = db_execute("SELECT size,last_date FROM boobs WHERE chat_id=? AND user_id=?", (str(chat_id), str(user_id)), fetch=True)
     if row:
-        last_date = row[0]["last_date"]
-        current_size = row[0]["size"]
+        size, last_date = row[0]["size"], row[0]["last_date"]
+        if last_date == today:
+            return 0, size
     else:
-        last_date = None
-        current_size = 0
+        size = 0
 
-    if last_date == today:
-        return 0, current_size  # уже играл сегодня
-
-    delta = random.randint(-10,10)
-    new_size = max(current_size + delta, 0)
-    db_execute(f"INSERT OR REPLACE INTO {TABLE}(chat_id, user_id, size, last_date) VALUES(?,?,?,?)",
+    delta = random_delta(-10,10)
+    new_size = max(size + delta, 0)
+    db_execute("INSERT OR REPLACE INTO boobs(chat_id,user_id,size,last_date) VALUES (?,?,?,?)",
                (str(chat_id), str(user_id), new_size, today))
     return delta, new_size
 
 @bot.message_handler(commands=['sisi'])
-def cmd_sisi(m):
-    chat_id, user_id = m.chat.id, m.from_user.id
-    delta, new_size = change_size(chat_id, user_id)
-    name = get_display_name(chat_id, user_id)
-
+def cmd_sisi(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    delta, new_size = change_boobs(chat_id, user_id)
     if delta == 0:
-        bot.reply_to(m, f"Ой, а ты уже пробовал сегодня 😅\nТвой текущий размер груди — <b>{new_size}</b> 🍒")
+        bot.reply_to(message, f"Упс, ты уже играл сегодня 😅 Твой размер груди: {new_size}")
     else:
-        sign = f"{delta:+d}"
-        bot.reply_to(m, f"🍒 {name}, твой размер груди вырос на <b>{sign}</b>, теперь твой размер груди — <b>{new_size}</b> 🍒")
+        bot.reply_to(message, f"🍒 Твой размер груди вырос на {delta}, теперь он: {new_size}")
