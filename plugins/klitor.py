@@ -1,66 +1,60 @@
 import json
+import os
 import random
 from datetime import datetime
-from .common import get_name
 
-FILE = "data/klitor.json"
-TRIGGER = "/klitor"
-EMOJI = "💎"
+DATA_FILE = "data/klitor.json"
 
-def weighted_random():
-    roll = random.randint(1, 100)
-    if roll <= 60:
-        return random.randint(1, 5)
-    elif roll <= 80:
-        return random.randint(0, 1)
-    else:
-        return random.randint(6, 10)
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {}
+    try:
+        with open(DATA_FILE, "r", encoding="utf8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_data(data):
+    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+    with open(DATA_FILE, "w", encoding="utf8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def get_real_name(user):
+    return getattr(user, 'full_name', getattr(user, 'first_name', f"User{user.id}"))
 
 def handle(bot, message):
-    if not message.text:
-        return
-
-    if message.text.split("@")[0] != TRIGGER:
-        return
-
-    chat_id = str(message.chat.id)
     user_id = str(message.from_user.id)
-    name = get_name(message.from_user)
+    user_name = get_real_name(message.from_user)
+    chat_id = str(message.chat.id)
 
-    try:
-        with open(FILE, "r") as f:
-            data = json.load(f)
-    except:
-        data = {}
-
+    data = load_data()
     if chat_id not in data:
         data[chat_id] = {}
 
-    if user_id not in data[chat_id]:
-        data[chat_id][user_id] = {"name": name, "size_mm": 0, "last_day": ""}
+    user_data = data[chat_id].get(user_id, {"size_mm": 0, "last_play": None})
 
-    user = data[chat_id][user_id]
+    last_play = user_data.get("last_play")
+    today = datetime.now().date()
+    if last_play:
+        last_play_date = datetime.fromisoformat(last_play).date()
+        if last_play_date == today:
+            bot.send_message(chat_id, f"{user_name}, ты уже играл сегодня 😅\nТекущий клитор: {user_data['size_mm']} мм")
+            return
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    roll = random.randint(1, 100)
+    if roll <= 70:
+        delta = random.randint(1, 5)
+    elif roll <= 85:
+        delta = random.randint(-10, 0)
+    else:
+        delta = random.randint(6, 10)
 
-    if user["last_day"] == today:
-        bot.send_message(
-            message.chat.id,
-            f"{EMOJI} {name}, ты уже играла сегодня\nТвой клитор — {user['size_mm']} мм"
-        )
-        return
+    new_size = max(user_data["size_mm"] + delta, 0)
+    user_data.update({
+        "size_mm": new_size,
+        "last_play": datetime.now().isoformat()
+    })
+    data[chat_id][user_id] = user_data
+    save_data(data)
 
-    increase = weighted_random()
-
-    user["size_mm"] += increase
-    user["last_day"] = today
-    user["name"] = name
-
-    with open(FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-    bot.send_message(
-        message.chat.id,
-        f"{EMOJI} {name}, твой клитор вырос на {increase} мм\n"
-        f"Теперь он — {user['size_mm']} мм"
-    )
+    bot.send_message(chat_id, f"💎 {user_name}, твой клитор вырос на {delta} мм!\nТеперь текущий размер: {new_size} мм")
