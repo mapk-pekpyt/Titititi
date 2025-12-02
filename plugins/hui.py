@@ -15,8 +15,9 @@ def save(data):
         json.dump(data, f, indent=2)
 
 def handle(bot, message):
-    if not message.text or not message.text.startswith(TRIGGER):
-        return
+    text = message.text.split("@")[0]  # отрезаем @BotName
+if text != TRIGGER:
+    return
 
     user = message.from_user
     uid = str(user.id)
