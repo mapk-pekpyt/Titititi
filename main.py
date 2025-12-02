@@ -17,6 +17,13 @@ PLUGINS = {
     "kto": kto,
 }
 
+# Обработчик /my
+@bot.message_handler(commands=["my"])
+def my_sizes(message):
+    from plugins import top_plugin
+    top_plugin.handle_my(bot, message)
+
+# Общий обработчик всех плагинов
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     text = message.text
