@@ -1,6 +1,4 @@
-# plugins/example_plugin.py
-from main import bot
-
-@bot.message_handler(commands=['test', 'ping'])
-def cmd_test(m):
-    bot.reply_to(m, "plugin ok ✅")
+def setup(bot):
+    @bot.message_handler(commands=["ping"])
+    def ping(message):
+        bot.send_message(message.chat.id, "Pong!")
