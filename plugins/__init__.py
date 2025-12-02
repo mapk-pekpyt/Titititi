@@ -1,1 +1,2 @@
-# plugins package init - пустой файл, нужен для пакета
+# plugins/__init__.py
+# Папка плагинов — пакет
