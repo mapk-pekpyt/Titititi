@@ -1,22 +1,37 @@
+from main import bot, get_display_name
 import json
-import os
 
-DATA_FILES = {
+FILES = {
     "sisi": "data/sisi.json",
     "hui": "data/hui.json",
     "klitor": "data/klitor.json"
 }
 
-def handle(bot, message):
-    chat_id = message.chat.id
-    for name, file in DATA_FILES.items():
-        if not os.path.exists(file):
-            bot.send_message(chat_id, f"{name} топ: пока пусто 😅")
-            continue
-        with open(file, "r") as f:
-            data = json.load(f)
-        sorted_users = sorted(data.items(), key=lambda x: x[1]["size"], reverse=True)
-        text = f"🏆 {name} Топ 5:\n"
-        for i, (uid, info) in enumerate(sorted_users[:5], start=1):
-            text += f"{i}. {info.get('size',0)} — {uid}\n"
-        bot.send_message(chat_id, text)
+EMOJIS = {
+    "sisi": "🎀",
+    "hui": "🍆",
+    "klitor": "💎"
+}
+
+@bot.message_handler(commands=["top"])
+def top_all(message):
+    for key, file in FILES.items():
+        try:
+            with open(file, "r") as f:
+                data = json.load(f)
+        except:
+            data = {}
+
+        # сортировка по размеру
+        if key == "klitor":
+            sorted_data = sorted(data.items(), key=lambda x: x[1]["size_mm"], reverse=True)
+        else:
+            sorted_data = sorted(data.items(), key=lambda x: x[1]["size"], reverse=True)
+
+        text = f"🏆 Топ {EMOJIS[key]}:\n"
+        for i, (user_id, info) in enumerate(sorted_data[:5], 1):
+            name = info.get("name", str(user_id))
+            size = info.get("size") if key != "klitor" else info.get("size_mm")/10
+            text += f"{i}. {name} — {size}\n"
+
+        bot.send_message(message.chat.id, text)
