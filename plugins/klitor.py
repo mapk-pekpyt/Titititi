@@ -1,35 +1,31 @@
-# plugins/klitor.py
-import random
-from main import bot
-from core import db_execute, today_date
+from core import db_execute, today_date, random_delta
 
-TABLE = "klitor"
+GAME_NAME = "klitor"
 
-@bot.message_handler(commands=['klitor'])
-def cmd_klitor(message):
-    chat_id = str(message.chat.id)
-    user_id = str(message.from_user.id)
-    today = today_date()
+def setup(bot):
+    @bot.message_handler(commands=["klitor"])
+    def klitor_game(message):
+        chat_id = str(message.chat.id)
+        user_id = str(message.from_user.id)
+        today = today_date()
 
-    row = db_execute(f"SELECT size, last_date FROM {TABLE} WHERE chat_id=? AND user_id=?", (chat_id, user_id), fetch=True)
-    if row:
-        mm = int(row[0]["size"])
-        last = row[0]["last_date"]
-    else:
-        mm = 0
-        last = None
+        row = db_execute(
+            "SELECT value, last_play FROM game_data WHERE chat_id=? AND user_id=? AND game=?",
+            (chat_id, user_id, GAME_NAME),
+            fetch=True
+        )
 
-    if last == today:
-        bot.reply_to(message, f"Ой, уже играл сегодня 😅\nТекущий клитор — <b>{mm/10:.1f}</b> см 🍆")
-        return
+        if row and row[0][1] == today:
+            bot.send_message(chat_id, f"Упс, ты уже играл сегодня! Твой размер: {row[0][0]:.1f} см")
+            return
 
-    delta = random.randint(-10, 10)  # мм
-    new_mm = max(0, mm + delta)
+        current = row[0][0] if row else 0
+        delta_mm = random_delta(-10, 10)  # рост в мм
+        new_value = max(0, current + delta_mm / 10)  # переводим в см
 
-    db_execute(f"INSERT OR REPLACE INTO {TABLE} (chat_id, user_id, size, last_date) VALUES (?,?,?,?)",
-               (chat_id, user_id, new_mm, today))
+        db_execute(
+            "REPLACE INTO game_data (chat_id, user_id, game, value, last_play) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, user_id, GAME_NAME, new_value, today)
+        )
 
-    name = message.from_user.first_name or message.from_user.username or "Игрок"
-    sign = f"{delta:+d}"
-    delta_cm = round(delta/10, 1)
-    bot.reply_to(message, f"🍆 {name}, твой клитор вырос на <b>{sign}</b> мм ({delta_cm} см), теперь — <b>{new_mm/10:.1f}</b> см 🍆")
+        bot.send_message(chat_id, f"{message.from_user.first_name}, твоя клиторка выросла на {delta_mm} мм, теперь она равна {new_value:.1f} см")
