@@ -1,62 +1,77 @@
 import json
-from .common import get_name
+import os
+from datetime import datetime
 
-FILES = {
-    "sisi": "data/sisi.json",
-    "hui": "data/hui.json",
-    "klitor": "data/klitor.json"
-}
+TOP_FILE = "top_data.json"
 
-EMOJIS = {
-    "sisi": "🎀",
-    "hui": "🍆",
-    "klitor": "💎"
-}
 
-TRIGGER = "/top"
+def load_top():
+    if not os.path.exists(TOP_FILE):
+        return {}
+    try:
+        with open(TOP_FILE, "r", encoding="utf8") as f:
+            return json.load(f)
+    except:
+        return {}
 
-def handle(bot, message):
-    if not message.text:
-        return
 
-    text = message.text.split("@")[0]  # поддержка /top@BotName
-    if text != TRIGGER:
-        return
+def save_top(data):
+    with open(TOP_FILE, "w", encoding="utf8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-    chat_id = str(message.chat.id)
 
-    response = ""
+def get_real_name(user):
+    if user.full_name:
+        return user.full_name
+    if user.first_name:
+        return user.first_name
+    return f"User{user.id}"
 
-    for key, file in FILES.items():
-        try:
-            with open(file, "r") as f:
-                data = json.load(f)
-        except:
-            data = {}
 
-        chat_data = data.get(chat_id, {})
+def add_score(chat_id, user, amount):
+    chat_id = str(chat_id)
+    user_id = str(user.id)
 
-        # сортировка
-        if key == "klitor":
-            sorted_data = sorted(chat_data.items(), key=lambda x: x[1]["size_mm"], reverse=True)
-        else:
-            sorted_data = sorted(chat_data.items(), key=lambda x: x[1]["size"], reverse=True)
+    top = load_top()
 
-        response += f"{EMOJIS[key]} ТОП {key}:\n"
+    if chat_id not in top:
+        top[chat_id] = {}
 
-        for i, (user_id, info) in enumerate(sorted_data[:5], 1):
-            name = info.get("name", "Без имени")
+    if user_id not in top[chat_id]:
+        top[chat_id][user_id] = {
+            "name": get_real_name(user),
+            "score": 0,
+            "updated": datetime.utcnow().isoformat()
+        }
 
-            if key == "klitor":
-                size = info.get("size_mm", 0)
-                response += f"{i}. {name} — {size} мм\n"
-            elif key == "sisi":
-                size = info.get("size", 0)
-                response += f"{i}. {name} — размер {size}\n"
-            else:
-                size = info.get("size", 0)
-                response += f"{i}. {name} — {size} см\n"
+    top[chat_id][user_id]["score"] += amount
+    top[chat_id][user_id]["name"] = get_real_name(user)
+    top[chat_id][user_id]["updated"] = datetime.utcnow().isoformat()
 
-        response += "\n"
+    save_top(top)
 
-    bot.send_message(message.chat.id, response)
+
+def format_top(chat_id):
+    chat_id = str(chat_id)
+    top = load_top()
+
+    if chat_id not in top or not top[chat_id]:
+        return "Тут ещё никто не играл 😢"
+
+    sorted_users = sorted(
+        top[chat_id].values(),
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    result = "🏆 *Топ игроков этого чата:*\n\n"
+    for i, u in enumerate(sorted_users, start=1):
+        result += f"{i}. *{u['name']}* — `{u['score']}` очков\n"
+
+    return result
+
+
+# 🌟 Главная функция плагина — вызов через /top
+async def run(update, context):
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(format_top(chat_id), parse_mode="Markdown")
