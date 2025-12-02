@@ -1,40 +1,26 @@
-from telebot import TeleBot, types
-from core import init_db, db_execute
-import importlib
 import os
+import importlib
+from telebot import TeleBot, types
 
-TOKEN = "токен_бота_от_ботхоста"
-bot = TeleBot(TOKEN)
+# BotHost автоматически подставляет токен
+bot = TeleBot(token=os.environ.get("BOT_TOKEN"))
 
-# инициализация базы
-init_db()
+# Админ бота
+ADMIN_USERNAME = "@Sugar_Daddy_rip"
 
-# админ
-ADMIN = "Sugar_Daddy_rip"
-
-# загрузка плагинов
+# Функция для загрузки всех плагинов
 def load_plugins(bot):
-    for filename in os.listdir("plugins"):
+    plugin_dir = "plugins"
+    for filename in os.listdir(plugin_dir):
         if filename.endswith(".py") and filename != "__init__.py":
             modulename = filename[:-3]
-            module = importlib.import_module(f"plugins.{modulename}")
-            if hasattr(module, "setup"):
-                module.setup(bot)
+            module = importlib.import_module(f"{plugin_dir}.{modulename}")
+            if hasattr(module, "register"):
+                module.register(bot)
+    print("✅ Все плагины загружены")
 
-load_plugins(bot)
-
-# команда /help
-@bot.message_handler(commands=["help"])
-def help_cmd(message):
-    text = (
-        "📜 Список команд:\n"
-        "/sisi - игра про грудь\n"
-        "/hui - игра про хуй\n"
-        "/klitor - игра про клитор\n"
-        "/top - топ игроков по каждой игре\n"
-        "/mut x - выдать мут пользователю (платно, x = минуты)\n"
-        "/price x - установить цену 1 минуты мута (только админ)\n"
-    )
-    bot.send_message(message.chat.id, text)
-
-bot.infinity_polling()
+# Старт бота
+if __name__ == "__main__":
+    load_plugins(bot)
+    print("✅ Бот запущен, ожидаю события...")
+    bot.infinity_polling()
