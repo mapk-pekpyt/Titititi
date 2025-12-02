@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime, timedelta
-from main import get_display_name
+from utils import get_display_name
 
 FILE = "data/sisi.json"
 
