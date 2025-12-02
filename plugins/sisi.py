@@ -1,38 +1,34 @@
+# plugins/sisi.py
 import random
-from main import send
+from main import bot
+from core import db_execute, today_date
 
-KEY = "sisi"
+TABLE = "boobs"
 
-def register():
-    return KEY
+@bot.message_handler(commands=['sisi'])
+def cmd_sisi(message):
+    chat_id = str(message.chat.id)
+    user_id = str(message.from_user.id)
+    today = today_date()
 
-
-def handle(cmd, message, users):
-    if cmd != "/sisi":
-        return False
-
-    user_id = str(message["from"]["id"])
-    chat_id = message["chat"]["id"]
-    name = message["from"].get("first_name", "Ты")
-
-    users.setdefault(user_id, {})
-    users[user_id].setdefault(KEY, {"value": 0, "last": 0})
-
-    data = users[user_id][KEY]
-
-    if data["last"] == int(time.time() // 86400):
-        send(chat_id, f"{name}, ты уже играла сегодня.\nТвой размер: {data['value']}")
-        return True
-
-    grow = random.randint(-10, 10)
-    new_value = max(0, data["value"] + grow)
-
-    data["value"] = new_value
-    data["last"] = int(time.time() // 86400)
-
-    if grow >= 0:
-        send(chat_id, f"{name}, твоя грудь выросла на {grow}. Теперь размер: {new_value}")
+    row = db_execute(f"SELECT size, last_date FROM {TABLE} WHERE chat_id=? AND user_id=?", (chat_id, user_id), fetch=True)
+    if row:
+        size = int(row[0]["size"])
+        last = row[0]["last_date"]
     else:
-        send(chat_id, f"{name}, твоя грудь уменьшилась на {abs(grow)}. Теперь размер: {new_value}")
+        size = 0
+        last = None
 
-    return True
+    if last == today:
+        bot.reply_to(message, f"Ой, а ты уже пробовал сегодня 😅\nТвой текущий размер груди — <b>{size}</b> 🍒")
+        return
+
+    delta = random.randint(-10, 10)
+    new_size = max(0, size + delta)
+
+    db_execute(f"INSERT OR REPLACE INTO {TABLE} (chat_id, user_id, size, last_date) VALUES (?,?,?,?)",
+               (chat_id, user_id, new_size, today))
+
+    name = message.from_user.first_name or message.from_user.username or "Игрок"
+    sign = f"{delta:+d}"
+    bot.reply_to(message, f"🍒 {name}, твой размер груди вырос на <b>{sign}</b>, теперь твой размер груди — <b>{new_size}</b> 🍒")
