@@ -16,15 +16,11 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-def add_score(user_id, name, size_mm):
+def handle(bot, message):
+    user_id = message.from_user.id
+    name = message.from_user.first_name
     data = load_data()
-    data[str(user_id)] = {"name": name, "size_mm": size_mm}
+    current = data.get(str(user_id), {}).get("size_mm", 0) + 5  # мм
+    data[str(user_id)] = {"name": name, "size_mm": current}
     save_data(data)
-
-def get_top():
-    data = load_data()
-    sorted_data = sorted(data.items(), key=lambda x: x[1].get("size_mm", 0), reverse=True)
-    text = f"🏆 Топ {EMOJI}:\n"
-    for i, (user_id, info) in enumerate(sorted_data[:5], 1):
-        text += f"{i}. {info.get('name', user_id)} — {info.get('size_mm', 0)/10}\n"
-    return text
+    bot.reply_to(message, f"{EMOJI} {name}, ваш клитор теперь {current/10:.1f} см!")
