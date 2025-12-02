@@ -1,63 +1,46 @@
+PRICE_FILE = "data/mut_price.json"
+import json
+import os
 
-from core import db_execute
-from telebot import types
-import datetime
+def load_price():
+    if not os.path.exists(PRICE_FILE):
+        return 2  # по умолчанию 2 звезды за минуту
+    with open(PRICE_FILE, "r") as f:
+        return json.load(f)["price"]
 
-GAME_NAME = "mut"
+def save_price(price):
+    with open(PRICE_FILE, "w") as f:
+        json.dump({"price": price}, f)
 
-def setup(bot):
-    @bot.message_handler(commands=["price"])
-    def set_price(message):
-        if str(message.from_user.username) != "Sugar_Daddy_rip":
-            bot.send_message(message.chat.id, "❌ Только админ может менять цену!")
-            return
+def handle(bot, message):
+    text = message.text
+    user_id = message.from_user.id
+
+    # /price x для админа @Sugar_Daddy_rip
+    if text.startswith("/price") and message.from_user.username == "Sugar_Daddy_rip":
         try:
-            price = int(message.text.split()[1])
-            chat_id = str(message.chat.id)
-            db_execute("REPLACE INTO mut_settings (chat_id, price_per_min) VALUES (?, ?)", (chat_id, price))
-            bot.send_message(chat_id, f"💰 Цена за 1 минуту мута установлена: {price} ⭐")
+            price = int(text.split()[1])
+            save_price(price)
+            bot.send_message(message.chat.id, f"Цена за минуту Мута установлена на {price} ⭐")
         except:
-            bot.send_message(message.chat.id, "❌ Используй: /price <число>")
+            bot.send_message(message.chat.id, "Ошибка! Укажите число после /price")
+        return
 
-    @bot.message_handler(commands=["mut"])
-    def give_mut(message):
-        if not message.reply_to_message:
-            bot.send_message(message.chat.id, "❌ Команду нужно писать в ответ на сообщение пользователя.")
-            return
-        try:
-            minutes = int(message.text.split()[1])
-        except:
-            bot.send_message(message.chat.id, "❌ Укажи число минут: /mut <минуты>")
-            return
+    # Мут на другого пользователя
+    if not message.reply_to_message:
+        bot.send_message(message.chat.id, "Чтобы выдать мут, ответьте на сообщение пользователя с /mut X")
+        return
+    try:
+        minutes = int(text.split()[1])
+    except:
+        bot.send_message(message.chat.id, "Укажите количество минут после /mut")
+        return
 
-        chat_id = str(message.chat.id)
-        price_row = db_execute("SELECT price_per_min FROM mut_settings WHERE chat_id=?", (chat_id,), fetch=True)
-        price_per_min = price_row[0][0] if price_row else 2
-        total_price = price_per_min * minutes
+    price_per_minute = load_price()
+    total_price = price_per_minute * minutes
+    target_user = message.reply_to_message.from_user
 
-        target_user = message.reply_to_message.from_user
-        sender_user = message.from_user
-
-        # проверить баланс отправителя
-        balance_row = db_execute("SELECT balance FROM stars_balance WHERE user_id=?", (sender_user.id,), fetch=True)
-        balance = balance_row[0][0] if balance_row else 0
-
-        if balance < total_price:
-            bot.send_message(chat_id, f"⭐ У тебя недостаточно звезд. Нужно {total_price} ⭐")
-            return
-
-        # снимаем баланс
-        db_execute("UPDATE stars_balance SET balance=balance-? WHERE user_id=?", (total_price, sender_user.id))
-
-        # даем мут
-        bot.restrict_chat_member(
-            chat_id=chat_id,
-            user_id=target_user.id,
-            permissions=types.ChatPermissions(can_send_messages=False),
-            until_date=int(datetime.datetime.now().timestamp()) + minutes*60
-        )
-
-        bot.send_message(
-            chat_id,
-            f"⛔ Пользователь {target_user.first_name} лишён голоса на {minutes} минут(ы), т.к. царь @{sender_user.username} оплатил {total_price} ⭐"
-        )
+    # Здесь должна быть интеграция оплаты ⭐
+    bot.send_message(message.chat.id,
+                     f"@{target_user.username} будет отключен на {minutes} минут, "
+                     f"цена: {total_price} ⭐. Оплатите, чтобы завершить операцию.")
