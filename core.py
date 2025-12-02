@@ -1,23 +1,41 @@
 import sqlite3
+import datetime
 import random
-from datetime import datetime
 
-DB_PATH = "data/bot.db"
+DB = "data/bot.db"
 
 def db_execute(query, params=(), fetch=False):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(query, params)
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute(query, params)
     if fetch:
-        result = cur.fetchall()
-        conn.close()
-        return result
+        result = c.fetchall()
+    else:
+        result = None
     conn.commit()
     conn.close()
-    return None
+    return result
+
+def init_db():
+    db_execute("""CREATE TABLE IF NOT EXISTS game_data (
+        chat_id TEXT,
+        user_id TEXT,
+        game TEXT,
+        value REAL,
+        last_play TEXT,
+        PRIMARY KEY(chat_id, user_id, game)
+    )""")
+    db_execute("""CREATE TABLE IF NOT EXISTS mut_settings (
+        chat_id TEXT PRIMARY KEY,
+        price_per_min INTEGER DEFAULT 2
+    )""")
+    db_execute("""CREATE TABLE IF NOT EXISTS stars_balance (
+        user_id TEXT PRIMARY KEY,
+        balance INTEGER DEFAULT 0
+    )""")
 
 def today_date():
-    return datetime.now().strftime("%Y-%m-%d")
+    return datetime.date.today().isoformat()
 
-def random_delta(min_val=-10, max_val=10):
+def random_delta(min_val, max_val):
     return random.randint(min_val, max_val)
