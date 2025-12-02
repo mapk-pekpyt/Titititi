@@ -1,6 +1,6 @@
 import telebot
 from triggers import TRIGGERS
-from plugins import sisi, hui, klitor, mut, top_plugin
+from plugins import sisi, hui, klitor, mut, top_plugin, kto
 
 import os
 
