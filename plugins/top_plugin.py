@@ -1,6 +1,5 @@
 import json
 import os
-from datetime import datetime
 
 TOP_FILE = "top_data.json"
 
@@ -40,13 +39,11 @@ def add_score(chat_id, user, amount):
     if user_id not in top[chat_id]:
         top[chat_id][user_id] = {
             "name": get_real_name(user),
-            "score": 0,
-            "updated": datetime.utcnow().isoformat()
+            "score": 0
         }
 
     top[chat_id][user_id]["score"] += amount
     top[chat_id][user_id]["name"] = get_real_name(user)
-    top[chat_id][user_id]["updated"] = datetime.utcnow().isoformat()
 
     save_top(top)
 
@@ -64,14 +61,13 @@ def format_top(chat_id):
         reverse=True
     )
 
-    result = "🏆 *Топ игроков этого чата:*\n\n"
+    result = "🏆 Топ игроков чата:\n\n"
     for i, u in enumerate(sorted_users, start=1):
-        result += f"{i}. *{u['name']}* — `{u['score']}` очков\n"
+        result += f"{i}. {u['name']} — {u['score']} очков\n"
 
     return result
 
 
-# 🌟 Главная функция плагина — вызов через /top
-async def run(update, context):
-    chat_id = update.effective_chat.id
-    await update.message.reply_text(format_top(chat_id), parse_mode="Markdown")
+def handle(bot, message):
+    chat_id = message.chat.id
+    bot.send_message(chat_id, format_top(chat_id))
