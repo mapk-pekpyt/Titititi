@@ -1,38 +1,30 @@
-import random
 import json
-from datetime import date
-from main import bot, get_display_name
+import os
 
 DATA_FILE = "data/hui.json"
+EMOJI = "🍆"
 
 def load_data():
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+    if not os.path.exists(DATA_FILE):
+        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+        with open(DATA_FILE, "w") as f:
+            json.dump({}, f)
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-@bot.message_handler(commands=["hui"])
-def hui_game(message):
-    user = str(message.from_user.id)
-    name = get_display_name(message)
-    today = str(date.today())
-
+def add_score(user_id, name, score):
     data = load_data()
-    user_data = data.get(user, {"size": 0, "last_play": ""})
-
-    if user_data["last_play"] == today:
-        bot.reply_to(message, f"{name} 🍆, ты уже играл сегодня! Твой размер: {user_data['size']} см")
-        return
-
-    delta = random.randint(-10, 10)
-    user_data["size"] = max(0, user_data["size"] + delta)
-    user_data["last_play"] = today
-    data[user] = user_data
+    data[str(user_id)] = {"name": name, "size": score}
     save_data(data)
 
-    bot.reply_to(message, f"{name} 🍆, твой член вырос на {delta} см. Теперь он равен {user_data['size']} см")
+def get_top():
+    data = load_data()
+    sorted_data = sorted(data.items(), key=lambda x: x[1].get("size", 0), reverse=True)
+    text = f"🏆 Топ {EMOJI}:\n"
+    for i, (user_id, info) in enumerate(sorted_data[:5], 1):
+        text += f"{i}. {info.get('name', user_id)} — {info.get('size', 0)}\n"
+    return text
