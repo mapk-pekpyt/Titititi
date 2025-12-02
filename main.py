@@ -1,38 +1,40 @@
-import os
+from telebot import TeleBot, types
+from core import init_db, db_execute
 import importlib
-from telebot import TeleBot
+import os
 
-from core import db_execute
-
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise Exception("BOT_TOKEN не установлен!")
-
+TOKEN = "токен_бота_от_ботхоста"
 bot = TeleBot(TOKEN)
 
-# Загрузка всех плагинов
-def load_plugins():
-    plugins_dir = "plugins"
-    for filename in os.listdir(plugins_dir):
+# инициализация базы
+init_db()
+
+# админ
+ADMIN = "Sugar_Daddy_rip"
+
+# загрузка плагинов
+def load_plugins(bot):
+    for filename in os.listdir("plugins"):
         if filename.endswith(".py") and filename != "__init__.py":
             modulename = filename[:-3]
-            module = importlib.import_module(f"{plugins_dir}.{modulename}")
+            module = importlib.import_module(f"plugins.{modulename}")
             if hasattr(module, "setup"):
                 module.setup(bot)
 
-# Инициализация базы
-db_execute("""
-CREATE TABLE IF NOT EXISTS game_data (
-    chat_id TEXT,
-    user_id TEXT,
-    game TEXT,
-    value REAL,
-    last_play TEXT,
-    PRIMARY KEY(chat_id, user_id, game)
-)
-""")
+load_plugins(bot)
 
-load_plugins()
+# команда /help
+@bot.message_handler(commands=["help"])
+def help_cmd(message):
+    text = (
+        "📜 Список команд:\n"
+        "/sisi - игра про грудь\n"
+        "/hui - игра про хуй\n"
+        "/klitor - игра про клитор\n"
+        "/top - топ игроков по каждой игре\n"
+        "/mut x - выдать мут пользователю (платно, x = минуты)\n"
+        "/price x - установить цену 1 минуты мута (только админ)\n"
+    )
+    bot.send_message(message.chat.id, text)
 
-print("Бот запущен...")
 bot.infinity_polling()
