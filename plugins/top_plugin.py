@@ -1,4 +1,4 @@
-import json, os
+import json
 from .common import get_name
 
 FILES = {
@@ -16,37 +16,47 @@ EMOJIS = {
 TRIGGER = "/top"
 
 def handle(bot, message):
-    if not message.text or not message.text.startswith(TRIGGER):
+    if not message.text:
         return
 
-    chat_id = message.chat.id
+    text = message.text.split("@")[0]  # поддержка /top@BotName
+    if text != TRIGGER:
+        return
+
+    chat_id = str(message.chat.id)
+
+    response = ""
 
     for key, file in FILES.items():
-        if not os.path.exists(file):
-            bot.send_message(chat_id, f"Топ {EMOJIS[key]} пустой.")
-            continue
+        try:
+            with open(file, "r") as f:
+                data = json.load(f)
+        except:
+            data = {}
 
-        with open(file, "r") as f:
-            data = json.load(f)
+        chat_data = data.get(chat_id, {})
 
+        # сортировка
         if key == "klitor":
-            sorted_data = sorted(data.items(), key=lambda x: x[1]["size_mm"], reverse=True)
+            sorted_data = sorted(chat_data.items(), key=lambda x: x[1]["size_mm"], reverse=True)
         else:
-            sorted_data = sorted(data.items(), key=lambda x: x[1]["size"], reverse=True)
+            sorted_data = sorted(chat_data.items(), key=lambda x: x[1]["size"], reverse=True)
 
-        text = f"{EMOJIS[key]} ТОП {key}:\n"
+        response += f"{EMOJIS[key]} ТОП {key}:\n"
 
-        for i, (uid, info) in enumerate(sorted_data[:5], 1):
-            name = info.get("name", uid)
+        for i, (user_id, info) in enumerate(sorted_data[:5], 1):
+            name = info.get("name", "Без имени")
 
             if key == "klitor":
-                size = info["size_mm"]
-                text += f"{i}. {name} — {size} мм\n"
-            elif key == "hui":
-                size = info["size"]
-                text += f"{i}. {name} — {size} см\n"
+                size = info.get("size_mm", 0)
+                response += f"{i}. {name} — {size} мм\n"
+            elif key == "sisi":
+                size = info.get("size", 0)
+                response += f"{i}. {name} — размер {size}\n"
             else:
-                size = info["size"]
-                text += f"{i}. {name} — размер {size}\n"
+                size = info.get("size", 0)
+                response += f"{i}. {name} — {size} см\n"
 
-        bot.send_message(chat_id, text)
+        response += "\n"
+
+    bot.send_message(message.chat.id, response)
