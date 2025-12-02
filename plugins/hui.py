@@ -1,10 +1,8 @@
-import json
-import os
-from datetime import datetime
-from utils import get_display_name
+import json, os
+from .common import german_time, weighted_random, get_name
 
+TRIGGER = "/hui"
 FILE = "data/hui.json"
-
 
 def load():
     if not os.path.exists(FILE):
@@ -12,57 +10,42 @@ def load():
     with open(FILE, "r") as f:
         return json.load(f)
 
-
 def save(data):
     with open(FILE, "w") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
+        json.dump(data, f, indent=2)
 
 def handle(bot, message):
-    if message.text.lower() != "/hui":
+    if not message.text or not message.text.startswith(TRIGGER):
         return
 
-    user_id = str(message.from_user.id)
-    name = get_display_name(message.from_user)
+    user = message.from_user
+    uid = str(user.id)
+    name = get_name(user)
 
+    today = german_time().strftime("%Y-%m-%d")
     data = load()
 
-    if user_id not in data:
-        data[user_id] = {
-            "size": 0,
-            "last_play": "2000-01-01"
-        }
+    if uid not in data:
+        data[uid] = {"size": 0, "last": "2000-01-01", "name": name}
 
-    last_play = datetime.fromisoformat(data[user_id]["last_play"])
-    now = datetime.now()
+    if data[uid]["last"] != today:
+        delta = weighted_random()
+        if data[uid]["size"] + delta < 0:
+            delta = -data[uid]["size"]
 
-    # если сегодня уже играли
-    if last_play.date() == now.date():
-        bot.send_message(
-            message.chat.id,
-            f"{name} 🍆, ты уже играл сегодня!\n"
-            f"Текущий размер — {data[user_id]['size']} см"
+        data[uid]["size"] += delta
+        data[uid]["last"] = today
+        data[uid]["name"] = name
+        save(data)
+
+        bot.reply_to(message,
+            f"{name} 🍆\n"
+            f"Твой хуй изменился на {delta} см\n"
+            f"Теперь размер: {data[uid]['size']} см"
         )
         return
 
-    import random
-    change = random.randint(-10, 10)
-
-    new_size = max(0, data[user_id]["size"] + change)
-    data[user_id]["size"] = new_size
-    data[user_id]["last_play"] = now.isoformat()
-
-    save(data)
-
-    if change >= 0:
-        bot.send_message(
-            message.chat.id,
-            f"{name} 🍆, твой хуй вырос на {change} см!\n"
-            f"Теперь размер — {new_size} см"
-        )
-    else:
-        bot.send_message(
-            message.chat.id,
-            f"{name} 🍆, твой хуй уменьшился на {abs(change)} см...\n"
-            f"Теперь размер — {new_size} см"
-        )
+    bot.reply_to(message,
+        f"{name} 🍆 ты уже играл сегодня!\n"
+        f"Твой текущий размер: {data[uid]['size']} см"
+    )
