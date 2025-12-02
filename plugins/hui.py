@@ -1,31 +1,35 @@
-from core import db_execute, today_date, random_delta
+import random
+import os
+import json
 
-GAME_NAME = "hui"
+DATA_FILE = "data/hui.json"
 
-def setup(bot):
-    @bot.message_handler(commands=["hui"])
-    def hui_game(message):
-        chat_id = str(message.chat.id)
-        user_id = str(message.from_user.id)
-        today = today_date()
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {}
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-        row = db_execute(
-            "SELECT value, last_play FROM game_data WHERE chat_id=? AND user_id=? AND game=?",
-            (chat_id, user_id, GAME_NAME),
-            fetch=True
-        )
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
 
-        if row and row[0][1] == today:
-            bot.send_message(chat_id, f"Упс, ты уже играл сегодня! Твой размер: {row[0][0]} см")
-            return
-
-        current = row[0][0] if row else 0
-        delta = random_delta(-10, 10)
-        new_value = max(0, current + delta)
-
-        db_execute(
-            "REPLACE INTO game_data (chat_id, user_id, game, value, last_play) VALUES (?, ?, ?, ?, ?)",
-            (chat_id, user_id, GAME_NAME, new_value, today)
-        )
-
-        bot.send_message(chat_id, f"{message.from_user.first_name}, твой хуй вырос на {delta} см, теперь он равен {new_value} см")
+def handle(bot, message):
+    user_id = str(message.from_user.id)
+    data = load_data()
+    if user_id not in data:
+        data[user_id] = {"size": 0, "last_played": ""}
+    from datetime import date
+    today = str(date.today())
+    if data[user_id]["last_played"] == today:
+        bot.send_message(message.chat.id,
+                         f"Упс, {message.from_user.first_name}, ты уже играл сегодня 😅\n"
+                         f"Твой хуй: {data[user_id]['size']} см")
+        return
+    delta = random.randint(-10, 10)
+    data[user_id]["size"] = max(0, data[user_id]["size"] + delta)
+    data[user_id]["last_played"] = today
+    save_data(data)
+    bot.send_message(message.chat.id,
+                     f"{message.from_user.first_name} 🍆 твой хуй вырос на {delta} см, "
+                     f"теперь он равен {data[user_id]['size']} см")
