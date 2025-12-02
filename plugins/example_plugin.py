@@ -1,13 +1,6 @@
-def register():
-    return "example"
+# plugins/example_plugin.py
+from main import bot
 
-
-def handle(cmd, message, users):
-    if cmd != "/test":
-        return False
-
-    chat_id = message["chat"]["id"]
-    from main import send
-
-    send(chat_id, "Плагин работает")
-    return True
+@bot.message_handler(commands=['test', 'ping'])
+def cmd_test(m):
+    bot.reply_to(m, "plugin ok ✅")
