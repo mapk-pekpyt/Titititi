@@ -1,23 +1,22 @@
-from core import db_execute
-from telebot import types
+import json
+import os
 
-GAMES = ["sisi", "hui", "klitor"]
-EMOJIS = {"sisi":"👙", "hui":"🍆", "klitor":"🍑"}
+DATA_FILES = {
+    "sisi": "data/sisi.json",
+    "hui": "data/hui.json",
+    "klitor": "data/klitor.json"
+}
 
-def setup(bot):
-    @bot.message_handler(commands=["top"])
-    def top_cmd(message):
-        chat_id = str(message.chat.id)
-        for game in GAMES:
-            rows = db_execute(
-                "SELECT user_id, value FROM game_data WHERE chat_id=? AND game=? ORDER BY value DESC LIMIT 5",
-                (chat_id, game),
-                fetch=True
-            )
-            text = f"{EMOJIS[game]} Топ игроков в {game}:\n"
-            if not rows:
-                text += "Пусто 😢"
-            else:
-                for i, (user_id, value) in enumerate(rows, 1):
-                    text += f"{i}. <a href='tg://user?id={user_id}'>Пользователь</a> — {value}\n"
-            bot.send_message(chat_id, text, parse_mode="HTML")
+def handle(bot, message):
+    chat_id = message.chat.id
+    for name, file in DATA_FILES.items():
+        if not os.path.exists(file):
+            bot.send_message(chat_id, f"{name} топ: пока пусто 😅")
+            continue
+        with open(file, "r") as f:
+            data = json.load(f)
+        sorted_users = sorted(data.items(), key=lambda x: x[1]["size"], reverse=True)
+        text = f"🏆 {name} Топ 5:\n"
+        for i, (uid, info) in enumerate(sorted_users[:5], start=1):
+            text += f"{i}. {info.get('size',0)} — {uid}\n"
+        bot.send_message(chat_id, text)
