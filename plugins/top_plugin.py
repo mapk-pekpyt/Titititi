@@ -1,6 +1,5 @@
-# plugins/top_plugin.py
-import os
-import json
+import json, os
+from .common import get_name
 
 FILES = {
     "sisi": "data/sisi.json",
@@ -14,45 +13,40 @@ EMOJIS = {
     "klitor": "💎"
 }
 
-def ensure_file(path):
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-
-def load_data(path):
-    ensure_file(path)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def get_top_text(key, data):
-    if key == "klitor":
-        sorted_data = sorted(data.items(), key=lambda x: x[1].get("size_mm", 0), reverse=True)
-    else:
-        sorted_data = sorted(data.items(), key=lambda x: x[1].get("size", 0), reverse=True)
-
-    text = f"{EMOJIS[key]} <b>ТОП {key}</b>:\n"
-    if not sorted_data:
-        text += "Пусто 😅"
-        return text
-
-    for i, (uid, info) in enumerate(sorted_data[:10], 1):
-        name = info.get("name", uid)
-        if key == "klitor":
-            size = info.get("size_mm", 0) / 10
-            text += f"{i}. {name} — {size:.1f} см\n"
-        else:
-            size = info.get("size", 0)
-            text += f"{i}. {name} — {size} см\n"
-    return text
+TRIGGER = "/top"
 
 def handle(bot, message):
+    if not message.text or not message.text.startswith(TRIGGER):
+        return
+
     chat_id = message.chat.id
-    # send three separate messages (one per game)
-    for key, path in FILES.items():
-        data = load_data(path)
-        text = get_top_text(key, data)
-        bot.send_message(chat_id, text, parse_mode="HTML")
+
+    for key, file in FILES.items():
+        if not os.path.exists(file):
+            bot.send_message(chat_id, f"Топ {EMOJIS[key]} пустой.")
+            continue
+
+        with open(file, "r") as f:
+            data = json.load(f)
+
+        if key == "klitor":
+            sorted_data = sorted(data.items(), key=lambda x: x[1]["size_mm"], reverse=True)
+        else:
+            sorted_data = sorted(data.items(), key=lambda x: x[1]["size"], reverse=True)
+
+        text = f"{EMOJIS[key]} ТОП {key}:\n"
+
+        for i, (uid, info) in enumerate(sorted_data[:5], 1):
+            name = info.get("name", uid)
+
+            if key == "klitor":
+                size = info["size_mm"]
+                text += f"{i}. {name} — {size} мм\n"
+            elif key == "hui":
+                size = info["size"]
+                text += f"{i}. {name} — {size} см\n"
+            else:
+                size = info["size"]
+                text += f"{i}. {name} — размер {size}\n"
+
+        bot.send_message(chat_id, text)
