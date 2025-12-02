@@ -15,6 +15,7 @@ PLUGINS = {
     "klitor": klitor,
     "mut": mut,
     "top_plugin": top_plugin,
+    "kto": kto,
 }
 
 # Регистрируем бота и слушаем все сообщения
