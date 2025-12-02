@@ -1,11 +1,14 @@
 import json
 import os
 import random
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone, timedelta
 
 TRIGGER = "/sisi"
 FILE = "data/sisi.json"
+
+# Германия (Берлин) UTC+1 / UTC+2
+def german_time():
+    return datetime.now(timezone.utc).astimezone()
 
 def get_name(user):
     if user.username:
@@ -14,15 +17,15 @@ def get_name(user):
         return f"{user.first_name} {user.last_name}"
     return user.first_name or "Безымянный"
 
-# вероятность: 1–5 — часто, остальные редко
+# вероятность приращения
 def weighted_random():
     r = random.randint(1, 100)
 
-    if r <= 65:              # 65%
+    if r <= 65:              # 65% шанса — норм рост 1–5
         return random.randint(1, 5)
     elif r <= 80:            # 15%
         return random.randint(6, 10)
-    else:                    # 20%
+    else:                    # 20% — ноль или уменьшение
         return random.randint(-10, 0)
 
 def load():
@@ -43,19 +46,17 @@ def handle(bot, message):
     uid = str(user.id)
     name = get_name(user)
 
-    tz = pytz.timezone("Europe/Berlin")
-    today = datetime.now(tz).strftime("%Y-%m-%d")
+    today = german_time().strftime("%Y-%m-%d")
 
     data = load()
 
     if uid not in data:
         data[uid] = {"size": 0, "last": "2000-01-01", "name": name}
 
-    # ежедневный рост
+    # ежедневное изменение
     if data[uid]["last"] != today:
         delta = weighted_random()
 
-        # не даём уйти в минус
         if data[uid]["size"] + delta < 0:
             delta = -data[uid]["size"]
 
@@ -72,7 +73,7 @@ def handle(bot, message):
         )
         return
 
-    # если уже играл сегодня
+    # уже играл сегодня
     bot.reply_to(message,
         f"{name} 🎀 ты уже играла сегодня!\n"
         f"Твой текущий размер груди: {data[uid]['size']}"
