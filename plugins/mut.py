@@ -1,13 +1,16 @@
 import os
 import json
-import threading
-from datetime import datetime, timedelta
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions, Message
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from telebot.types import LabeledPrice, ChatPermissions
+from telebot import TeleBot
 
 DATA_FILE = "data/price.json"
-ADMIN_ID = 5791171535  # твой ID
+TZ = ZoneInfo("Europe/Berlin")
+ADMIN_ID = 5791171535  # твой id
+DEFAULT_PRICE = 2  # цена по умолчанию в телеграмм-звездах
 
-DEFAULT_PRICE = 2  # цена в звездах за минуту
+PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN")  # токен платежного провайдера
 
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -26,107 +29,53 @@ def save_price(p):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump({"price": int(p)}, f)
 
-def get_display_name_from_user(user):
+def get_display_name(user):
     if getattr(user, "username", None):
         return f"@{user.username}"
+    if getattr(user, "first_name", None) and getattr(user, "last_name", None):
+        return f"{user.first_name} {user.last_name}"
     return user.first_name or "Пользователь"
 
-def unmute_later(bot, chat_id, target_id, minutes):
-    """Снимаем мут через X минут"""
-    def unmute():
-        try:
-            perms = ChatPermissions(
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True
-            )
-            bot.restrict_chat_member(chat_id, target_id, permissions=perms)
-            bot.send_message(chat_id, f"✅ <a href='tg://user?id={target_id}'>пользователь</a> снова может писать.", parse_mode="HTML")
-        except Exception as e:
-            bot.send_message(chat_id, f"Ошибка при снятии мута: {e}")
+def apply_mute(bot: TeleBot, chat_id, target_id, minutes, payer_name):
+    until = int((datetime.now(timezone.utc) + timedelta(minutes=minutes)).timestamp())
+    perms = ChatPermissions(
+        can_send_messages=False,
+        can_send_media_messages=False,
+        can_send_other_messages=False,
+        can_add_web_page_previews=False
+    )
+    bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
+    bot.send_message(
+        chat_id,
+        f"⛔ Пользователь <a href='tg://user?id={target_id}'>пользователь</a> лишён голоса на {minutes} минут — по тому что заебал - {payer_name}",
+        parse_mode="HTML"
+    )
 
-    t = threading.Timer(minutes * 60, unmute)
-    t.start()
-
-def apply_mute(bot, chat_id, target_id, minutes, payer_name):
-    """Выдаем временный мут через restrict_chat_member"""
-    try:
-        perms = ChatPermissions(
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
-            can_add_web_page_previews=False
-        )
-        until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
-        bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
-    except Exception as e:
-        bot.send_message(chat_id, f"Не удалось выдать мут (ошибка API): {e}")
+# Обработка команды /price
+def handle_price(bot, message):
+    text = message.text or ""
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "⛔ Только админ может менять цену.")
         return
 
-    bot.send_message(chat_id,
-                     f"⛔ Пользователь <a href='tg://user?id={target_id}'>пользователь</a> лишён голоса на {minutes} минут — "
-                     f"т.к. {payer_name} оплатил(а).",
-                     parse_mode="HTML")
-    unmute_later(bot, chat_id, target_id, minutes)
+    parts = text.split()
+    if len(parts) < 2:
+        current = load_price()
+        bot.reply_to(message, f"Текущая цена за 1 минуту: {current} ⭐")
+        return
 
-def handle_callback(bot, call):
-    """Обработка нажатия кнопки оплаты"""
-    data = call.data or ""
-    if not data.startswith("paymut:"):
-        return False
-    parts = data.split(":")
-    if len(parts) != 4:
-        bot.answer_callback_query(call.id, "Неправильные данные")
-        return True
-    _, payer_id_s, target_id_s, minutes_s = parts
     try:
-        payer_id = int(payer_id_s)
-        target_id = int(target_id_s)
-        minutes = int(minutes_s)
+        new_price = int(parts[1])
     except:
-        bot.answer_callback_query(call.id, "Неверные данные")
-        return True
+        bot.reply_to(message, "❗ Укажи целое число: /price 3")
+        return
 
-    if call.from_user.id != payer_id:
-        bot.answer_callback_query(call.id, "Только плательщик может нажать кнопку")
-        return True
+    save_price(new_price)
+    bot.reply_to(message, f"✅ Цена за 1 минуту установлена: {new_price} ⭐")
 
-    payer_name = get_display_name_from_user(call.from_user)
-    apply_mute(bot, call.message.chat.id, target_id, minutes, payer_name)
-    bot.answer_callback_query(call.id, "Оплата подтверждена, мут выдан ✅")
-    try:
-        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    except:
-        pass
-    return True
-
-def handle(bot, message: Message):
+# Обработка /mut
+def handle_mut(bot, message):
     text = (message.text or "").strip()
-
-    # --- Управление ценой ---
-    if text.startswith("/price"):
-        if message.from_user.id != ADMIN_ID:
-            bot.reply_to(message, "⛔ Только админ может менять цену.")
-            return
-        parts = text.split()
-        if len(parts) < 2:
-            current = load_price()
-            bot.reply_to(message, f"Текущая цена за 1 минуту: {current} ⭐")
-            return
-        try:
-            newp = int(parts[1])
-        except:
-            bot.reply_to(message, "❗ Укажи целое число: /price 3")
-            return
-        save_price(newp)
-        bot.reply_to(message, f"✅ Цена за 1 минуту установлена: {newp} ⭐")
-        return
-
-    # --- Выдать мут ---
-    if not text.startswith("/mut"):
-        return
-
     if not message.reply_to_message:
         bot.reply_to(message, "⚠️ Чтобы выдать мут, ответь на сообщение пользователя и введи /mut <минуты>")
         return
@@ -135,6 +84,7 @@ def handle(bot, message: Message):
     if len(parts) < 2:
         bot.reply_to(message, "Укажи минуты: /mut 5")
         return
+
     try:
         minutes = int(parts[1])
         if minutes <= 0:
@@ -147,19 +97,60 @@ def handle(bot, message: Message):
     total = price_per_min * minutes
     payer = message.from_user
     target = message.reply_to_message.from_user
-    payer_name = get_display_name_from_user(payer)
-    target_name = get_display_name_from_user(target)
 
-    # Если цена == 0 — сразу мут
+    payer_name = get_display_name(payer)
+    target_name = get_display_name(target)
+
+    # Если цена 0 — сразу выдаём мут
     if price_per_min == 0:
         apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
         return
 
-    # Иначе создаем кнопку оплаты
-    markup = InlineKeyboardMarkup()
-    cb = f"paymut:{payer.id}:{target.id}:{minutes}"
-    markup.add(InlineKeyboardButton(text=f"💫 Оплатить {total} ⭐", callback_data=cb))
-    bot.send_message(message.chat.id,
-                     f"💰 {payer_name} хочет замутить {target_name} на {minutes} минут. "
-                     f"Для подтверждения оплаты нажмите кнопку ниже (только плательщик). Цена: {total} ⭐",
-                     reply_markup=markup)
+    # Отправка настоящего инвойса Telegram
+    prices = [LabeledPrice(label=f"{minutes} минута(-ы) мута {target_name}", amount=total * 100)]  # цена в копейках
+    bot.send_invoice(
+        chat_id=message.chat.id,
+        title=f"Оплата мута {target_name}",
+        description=f"{payer_name} хочет замутить {target_name} на {minutes} минут",
+        provider_token=PAYMENT_PROVIDER_TOKEN,
+        currency="RUB",
+        prices=prices,
+        payload=f"mute:{payer.id}:{target.id}:{minutes}",
+        start_parameter="mutepayment"
+    )
+
+# Обработка успешной оплаты
+def handle_precheckout(bot, pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+def handle_success(bot, message):
+    payload = getattr(message, "successful_payment", None)
+    if not payload:
+        return
+    data = payload.invoice_payload  # формат: mute:{payer_id}:{target_id}:{minutes}
+    if not data.startswith("mute:"):
+        return
+    _, payer_id_s, target_id_s, minutes_s = data.split(":")
+    payer_id = int(payer_id_s)
+    target_id = int(target_id_s)
+    minutes = int(minutes_s)
+    payer = message.from_user
+    if payer.id != payer_id:
+        bot.send_message(message.chat.id, "❌ Платёж с неправильного аккаунта")
+        return
+    payer_name = get_display_name(payer)
+    apply_mute(bot, message.chat.id, target_id, minutes, payer_name)
+
+# Главная точка вызова
+def handle(bot, message):
+    text = (message.text or "").strip()
+    if text.startswith("/price"):
+        handle_price(bot, message)
+        return
+    if text.startswith("/mut"):
+        handle_mut(bot, message)
+        return
+
+# Регистрируем обработку платежей в main.py:
+# bot.pre_checkout_query_handler(func=lambda query: True)(mut.handle_precheckout)
+# bot.message_handler(content_types=['successful_payment'])(mut.handle_success)
