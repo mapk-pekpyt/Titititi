@@ -23,6 +23,14 @@ def my_sizes(message):
     from plugins import top_plugin
     top_plugin.handle_my(bot, message)
 
+
+# 🔥 Обработчик успешной оплаты — ДОЛЖЕН быть ДО infinity_polling
+@bot.message_handler(content_types=['successful_payment'])
+def payment_handler(message):
+    # метод handle_successful должен быть в plugins/mut.py
+    mut.handle_successful(bot, message)
+
+
 # Общий обработчик всех плагинов
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
@@ -50,6 +58,7 @@ def handle_all_messages(message):
         plugin.handle(bot, message)
     else:
         print(f"❗ Плагин {plugin_name} не имеет функции handle()")
+
 
 if __name__ == "__main__":
     print("Бот запущен...")
