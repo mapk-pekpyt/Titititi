@@ -1,37 +1,30 @@
 import os
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from telebot.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    ChatPermissions,
-    LabeledPrice
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ChatPermissions, LabeledPrice
 )
-from telebot import TeleBot
-
-# === НАСТРОЙКИ ===
 
 DATA_FILE = "data/price.json"
-ADMIN_ID = 5791171535                 # твой ID
-DEFAULT_PRICE = 2                     # цена за минуту
-PROVIDER_TOKEN = os.environ.get("PROVIDER_TOKEN")  # токен Telegram Payments
-CURRENCY = "XTR"                      # валюта Telegram Stars
-TZ = timezone.utc
+TZ = ZoneInfo("Europe/Berlin")
+DEFAULT_PRICE = 2  # ⭐ за минуту
 
 
-# === ХРАНЕНИЕ ЦЕНЫ ===
-
+# ========== STORAGE ==========
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+
 
 def load_price():
     ensure_data_dir()
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            d = json.load(f)
-            return int(d.get("price", DEFAULT_PRICE))
+            return int(json.load(f).get("price", DEFAULT_PRICE))
     except:
         return DEFAULT_PRICE
+
 
 def save_price(p):
     ensure_data_dir()
@@ -39,85 +32,99 @@ def save_price(p):
         json.dump({"price": int(p)}, f)
 
 
-# === ВСПОМОГАТЕЛЬНЫЕ ===
-
+# ========== NAMES ==========
 def get_display_name(user):
-    if getattr(user, "username", None):
+    if user.username:
         return f"@{user.username}"
-    return user.first_name or "Безымянный"
+    return user.first_name or "Пользователь"
 
 
-def apply_mute(bot: TeleBot, chat_id, target_id, minutes, payer_name):
+def get_display_name_by_id(bot, chat_id, user_id):
+    try:
+        member = bot.get_chat_member(chat_id, user_id).user
+        return get_display_name(member)
+    except:
+        return "Пользователь"
+
+
+# ========== MUTE APPLY ==========
+def apply_mute(bot, chat_id, target_id, minutes, payer_name):
     until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
-    perms = ChatPermissions(
-        can_send_messages=False,
-        can_send_media_messages=False,
-        can_send_other_messages=False,
-        can_add_web_page_previews=False
-    )
 
     try:
+        perms = ChatPermissions(
+            can_send_messages=False,
+            can_send_media_messages=False,
+            can_send_other_messages=False,
+            can_add_web_page_previews=False
+        )
         bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
     except Exception as e:
         bot.send_message(chat_id, f"❌ Не удалось выдать мут: {e}")
         return
 
-target_name = get_display_name_by_id(bot, chat_id, target_id)
+    target_name = get_display_name_by_id(bot, chat_id, target_id)
 
-bot.send_message(
-    chat_id,
-    f"🔇 {target_name}, ты уже заебал {payer_name}…\n"
-    f"Он оплатил твоё молчание 😎💰",
-    parse_mode="HTML"
-)
+    bot.send_message(
+        chat_id,
+        f"🔇 {target_name}, ты уже заебал {payer_name}…\n"
+        f"Он оплатил твоё молчание 😎💰",
+        parse_mode="HTML"
+    )
 
 
-# === ГЛАВНАЯ ФУНКЦИЯ ПЛАГИНА (main.py вызывает только ЭТО) ===
+# ========== PAYMENT CALLBACK ==========
+def handle_successful_payment(bot, message):
+    payload = message.successful_payment.invoice_payload
+    # payload format: mut:<chat_id>:<payer_id>:<target_id>:<minutes>
+    try:
+        _, chat_id, payer_id, target_id, minutes = payload.split(":")
+        chat_id = int(chat_id)
+        payer_id = int(payer_id)
+        target_id = int(target_id)
+        minutes = int(minutes)
+    except:
+        return bot.send_message(message.chat.id, "❌ Ошибка данных платежа")
 
-def handle(bot: TeleBot, message):
+    payer_name = get_display_name_by_id(bot, chat_id, payer_id)
+    apply_mute(bot, chat_id, target_id, minutes, payer_name)
+
+
+# ========== MAIN COMMAND ==========
+def handle(bot, message):
     text = (message.text or "").strip()
 
-    # === Команда /price ===
+    # /price — ADMIN FUNCTION (not removing)
     if text.startswith("/price"):
-        if message.from_user.id != ADMIN_ID:
-            bot.reply_to(message, "⛔ Только админ может менять цену.")
-            return
-
         parts = text.split()
-        if len(parts) == 1:
-            bot.reply_to(message, f"💰 Текущая цена: {load_price()} ⭐ за 1 минуту")
-            return
-
+        if message.from_user.id != 5791171535:
+            return bot.reply_to(message, "⛔ Только админ может менять цену.")
+        if len(parts) < 2:
+            return bot.reply_to(message, f"Текущая цена: {load_price()} ⭐ за минуту.")
         try:
-            p = int(parts[1])
+            newp = int(parts[1])
+            save_price(newp)
+            return bot.reply_to(message, f"Цена обновлена: {newp} ⭐")
         except:
-            bot.reply_to(message, "❗ Введи число: /price 3")
-            return
+            return bot.reply_to(message, "Укажи число.")
 
-        save_price(p)
-        bot.reply_to(message, f"✅ Новая цена: {p} ⭐")
-        return
-
-    # === Команда /mut ===
+    # must start with /mut
     if not text.startswith("/mut"):
         return
 
     if not message.reply_to_message:
-        bot.reply_to(message, "⚠ Ответь на сообщение пользователя: /mut <минуты>")
-        return
+        return bot.reply_to(message, "Ответь на сообщение человека: /mut <минуты>")
 
     parts = text.split()
     if len(parts) < 2:
-        bot.reply_to(message, "❗ Укажи минуты: /mut 5")
-        return
+        return bot.reply_to(message, "Укажи минуты: /mut 5")
 
     try:
         minutes = int(parts[1])
         if minutes <= 0:
             raise ValueError()
     except:
-        bot.reply_to(message, "❗ Укажи корректное целое число")
-        return
+        return bot.reply_to(message, "Минуты должны быть числом > 0")
 
     payer = message.from_user
     target = message.reply_to_message.from_user
@@ -125,50 +132,26 @@ def handle(bot: TeleBot, message):
     target_name = get_display_name(target)
 
     price_per_min = load_price()
-    total_price = price_per_min * minutes
 
-    # === Бесплатный мут ===
-    if total_price == 0:
-        apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
-        return
+    # FREE MODE (price=0)
+    if price_per_min == 0:
+        return apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
 
-    # === Платёж Stars ===
+    total_stars = price_per_min * minutes
+
+    # REAL PAYMENT (TELEGRAM STARS)
     try:
-        prices = [LabeledPrice(label=f"{minutes} мин мута", amount=total_price)]
         bot.send_invoice(
             chat_id=message.chat.id,
-            title=f"Мут {target_name}",
-            description=f"{payer_name} хочет замутить {target_name} на {minutes} минут 🔇",
-            provider_token=PROVIDER_TOKEN,
-            currency=CURRENCY,
-            prices=prices,
-            start_parameter="mut",
-            invoice_payload=f"mut:{target.id}:{minutes}",
+            title="Оплата мута",
+            description=(
+                f"{payer_name} хочет замутить {target_name} на {minutes} минут.\n"
+                f"Цена: {total_stars} ⭐"
+            ),
+            provider_token="",  # <= ОБЯЗАТЕЛЬНО ВСТАВЬ provider_token
+            currency="XTR",
+            prices=[LabeledPrice(label="Mute", amount=total_stars)],
+            payload=f"mut:{message.chat.id}:{payer.id}:{target.id}:{minutes}"
         )
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка создания платежа: {e}")
-
-
-# === ХЕНДЛЕР УСПЕШНОЙ ОПЛАТЫ (РЕГИСТРИРУЕМ ЗДЕСЬ) ===
-
-def register_handlers(bot: TeleBot):
-    @bot.pre_checkout_query_handler(func=lambda q: True)
-    def _(q):
-        bot.answer_pre_checkout_query(q.id, ok=True)
-
-    @bot.message_handler(content_types=['successful_payment'])
-    def _(msg):
-        payload = msg.successful_payment.invoice_payload
-        if not payload.startswith("mut:"):
-            return
-
-        _, tid, minutes = payload.split(":")
-        apply_mute(bot, msg.chat.id, int(tid), int(minutes), get_display_name(msg.from_user))
-
-
-# === РЕГИСТРАЦИЯ ХЕНДЛЕРОВ ПРИ ИМПОРТЕ ===
-# main.py НЕ НУЖНО ОТКРЫВАТЬ ИЛИ МЕНЯТЬ
-# bot ИМЕЕТСЯ ВНУТРИ main.py → импортируем mut ПОСЛЕ bot = TeleBot(...)
-
-def init(bot):
-    register_handlers(bot)
+        bot
