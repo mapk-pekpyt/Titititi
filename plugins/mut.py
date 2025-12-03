@@ -1,18 +1,14 @@
-# plugins/mut.py
 import os
 import json
 import threading
-import time
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import Message, ChatPermissions
 
 DATA_FILE = "data/price.json"
-TZ = ZoneInfo("Europe/Berlin")
-ADMIN_ID = 5791171535  # твой id (как ты прислал)
+ADMIN_ID = 5791171535  # твой ID
 
-# default price (stars) per minute
-DEFAULT_PRICE = 2
+DEFAULT_PRICE = 2  # звезды за минуту
 
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -36,27 +32,34 @@ def get_display_name_from_user(user):
         return f"@{user.username}"
     return user.first_name or "Пользователь"
 
+def unmute_later(bot, chat_id, target_id, minutes):
+    """Снимаем бан через X минут"""
+    def unmute():
+        bot.unban_chat_member(chat_id, target_id)
+        try:
+            bot.send_message(chat_id, f"✅ <a href='tg://user?id={target_id}'>пользователь</a> снова может писать.", parse_mode="HTML")
+        except:
+            pass
+
+    t = threading.Timer(minutes * 60, unmute)
+    t.start()
+
 def apply_mute(bot, chat_id, target_id, minutes, payer_name):
-    # until_date as unix timestamp
-    until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
+    """Выдаем временный мут через бан/разбан"""
     try:
-        perms = ChatPermissions(can_send_messages=False, can_send_media_messages=False,
-                                can_send_other_messages=False, can_add_web_page_previews=False)
-        bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
+        bot.ban_chat_member(chat_id, target_id)
     except Exception as e:
-        # try fallback: send message about failure
         bot.send_message(chat_id, f"Не удалось выдать мут (ошибка API): {e}")
         return
-    bot.send_message(chat_id, f"⛔ Пользователь <a href='tg://user?id={target_id}'>пользователь</a> лишён голоса на {minutes} минут — т.к. {payer_name} оплатил(а).", parse_mode="HTML")
 
-# callback handler name: should be set in main.py to route callback_query to plugins if necessary.
-# But telebot supports global handler - since plugins are imported, register callback handler here:
+    bot.send_message(chat_id,
+                     f"⛔ Пользователь <a href='tg://user?id={target_id}'>пользователь</a> лишён голоса на {minutes} минут — "
+                     f"т.к. {payer_name} оплатил(а).",
+                     parse_mode="HTML")
+    unmute_later(bot, chat_id, target_id, minutes)
 
 def handle_callback(bot, call):
-    """
-    Обработка callback'ов для оплаты мутов.
-    callback_data формат: paymut:{payer_id}:{target_id}:{minutes}
-    """
+    """Обработка нажатия кнопки оплаты"""
     data = call.data or ""
     if not data.startswith("paymut:"):
         return False
@@ -73,30 +76,28 @@ def handle_callback(bot, call):
         bot.answer_callback_query(call.id, "Неверные данные")
         return True
 
-    # only the payer can press the pay button
     if call.from_user.id != payer_id:
-        bot.answer_callback_query(call.id, "Только платильщик может нажать эту кнопку")
+        bot.answer_callback_query(call.id, "Только плательщик может нажать кнопку")
         return True
 
     payer_name = get_display_name_from_user(call.from_user)
-    # here we assume payment is done outside or transferred; we treat button press as confirmation
     apply_mute(bot, call.message.chat.id, target_id, minutes, payer_name)
     bot.answer_callback_query(call.id, "Оплата подтверждена, мут выдан ✅")
-    # edit message to show paid
     try:
         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
     except:
         pass
     return True
 
-def handle(bot, message):
+def handle(bot, message: Message):
     text = (message.text or "").strip()
-    # admin can set price with /price X
+
+    # --- Управление ценой ---
     if text.startswith("/price"):
-        parts = text.split()
         if message.from_user.id != ADMIN_ID:
             bot.reply_to(message, "⛔ Только админ может менять цену.")
             return
+        parts = text.split()
         if len(parts) < 2:
             current = load_price()
             bot.reply_to(message, f"Текущая цена за 1 минуту: {current} ⭐")
@@ -110,7 +111,7 @@ def handle(bot, message):
         bot.reply_to(message, f"✅ Цена за 1 минуту установлена: {newp} ⭐")
         return
 
-    # /mut command
+    # --- Выдать мут ---
     if not text.startswith("/mut"):
         return
 
@@ -137,16 +138,16 @@ def handle(bot, message):
     payer_name = get_display_name_from_user(payer)
     target_name = get_display_name_from_user(target)
 
-    # if price == 0 — immediate mute (only payer must have the right to perform; we allow anyone to pay)
+    # Если цена == 0 — сразу мут
     if price_per_min == 0:
         apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
         return
 
-    # else: create inline button "Оплатить"
+    # Иначе создаем кнопку оплаты
     markup = InlineKeyboardMarkup()
-    # embed payer id so only payer can confirm
     cb = f"paymut:{payer.id}:{target.id}:{minutes}"
     markup.add(InlineKeyboardButton(text=f"💫 Оплатить {total} ⭐", callback_data=cb))
     bot.send_message(message.chat.id,
-                     f"💰 {payer_name} хочет замутить {target_name} на {minutes} минут. Для подтверждения оплаты нажмите кнопку ниже (только плательщик). Цена: {total} ⭐",
+                     f"💰 {payer_name} хочет замутить {target_name} на {minutes} минут. "
+                     f"Для подтверждения оплаты нажмите кнопку ниже (только плательщик). Цена: {total} ⭐",
                      reply_markup=markup)
