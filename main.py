@@ -24,10 +24,18 @@ def my_sizes(message):
     top_plugin.handle_my(bot, message)
 
 
-# 🔥 Обработчик успешной оплаты — ДОЛЖЕН быть ДО infinity_polling
+# ✅ ОБЯЗАТЕЛЬНО: обработчик pre-checkout для Stars
+@bot.pre_checkout_query_handler(func=lambda q: True)
+def checkout(pre_checkout_query):
+    try:
+        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+    except Exception as e:
+        print("❌ Ошибка pre-checkout:", e)
+
+
+# 🔥 Обработчик успешной оплаты
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
-    # метод handle_successful должен быть в plugins/mut.py
     mut.handle_successful(bot, message)
 
 
