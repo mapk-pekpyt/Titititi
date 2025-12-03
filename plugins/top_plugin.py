@@ -104,7 +104,7 @@ def handle_top(bot, message):
     )
     txt1 = "🏆 Топ сисечек:\n"
     for i, u in enumerate(sisi_list, 1):
-        txt1 += f"{i}. {u['name']} — {u['sisi']} размера 🍒\n"
+        txt1 += f"{i}. {u['name']} — {u['sisi']} размер 🍒\n"
 
     # 2. Топ хуёв
     hui_list = sorted(
