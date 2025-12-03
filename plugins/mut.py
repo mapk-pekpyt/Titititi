@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from telebot.types import (
-    InlineKeyboardMarkup, InlineKeyboardButton,
+    InlineKeyboardButton, InlineKeyboardMarkup,
     ChatPermissions, LabeledPrice
 )
 
@@ -11,10 +11,11 @@ DATA_FILE = "data/price.json"
 TZ = ZoneInfo("Europe/Berlin")
 DEFAULT_PRICE = 2  # ⭐ за минуту
 
+# ТВОЙ TOKEN
 PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
 
 
-# ========== STORAGE ==========
+# ---------------- STORAGE ----------------
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
 
@@ -34,7 +35,7 @@ def save_price(p):
         json.dump({"price": int(p)}, f)
 
 
-# ========== NAMES ==========
+# ---------------- NAME HANDLING ----------------
 def get_display_name(user):
     if user.username:
         return f"@{user.username}"
@@ -49,7 +50,7 @@ def get_display_name_by_id(bot, chat_id, user_id):
         return "Пользователь"
 
 
-# ========== APPLY MUTE ==========
+# ---------------- MUTE APPLY ----------------
 def apply_mute(bot, chat_id, target_id, minutes, payer_name):
     until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
 
@@ -75,10 +76,11 @@ def apply_mute(bot, chat_id, target_id, minutes, payer_name):
     )
 
 
-# ========== PAYMENT SUCCESS ==========
+# ---------------- PAYMENT SUCCESS ----------------
 def handle_successful_payment(bot, message):
     payload = message.successful_payment.invoice_payload
-    # payload format: mut:<chat_id>:<payer_id>:<target_id>:<minutes>
+
+    # mut:<chat_id>:<payer_id>:<target_id>:<minutes>
     try:
         _, chat_id, payer_id, target_id, minutes = payload.split(":")
         chat_id = int(chat_id)
@@ -86,23 +88,28 @@ def handle_successful_payment(bot, message):
         target_id = int(target_id)
         minutes = int(minutes)
     except:
-        return bot.send_message(message.chat.id, "❌ Ошибка данных платежа")
+        bot.send_message(message.chat.id, "❌ Ошибка данных платежа")
+        return
 
     payer_name = get_display_name_by_id(bot, chat_id, payer_id)
     apply_mute(bot, chat_id, target_id, minutes, payer_name)
 
 
-# ========== MAIN COMMAND ==========
+# ---------------- MAIN MUT COMMAND ----------------
 def handle(bot, message):
     text = (message.text or "").strip()
 
-    # /price — ADMIN FUNCTION
+    # ----- /price -----
     if text.startswith("/price"):
-        parts = text.split()
         if message.from_user.id != 5791171535:
             return bot.reply_to(message, "⛔ Только админ может менять цену.")
+
+        parts = text.split()
         if len(parts) < 2:
-            return bot.reply_to(message, f"Текущая цена: {load_price()} ⭐ за минуту.")
+            return bot.reply_to(
+                message, f"Текущая цена: {load_price()} ⭐ за минуту."
+            )
+
         try:
             newp = int(parts[1])
             save_price(newp)
@@ -110,7 +117,7 @@ def handle(bot, message):
         except:
             return bot.reply_to(message, "Укажи число.")
 
-    # must start with /mut
+    # ----- /mut -----
     if not text.startswith("/mut"):
         return
 
@@ -130,29 +137,29 @@ def handle(bot, message):
 
     payer = message.from_user
     target = message.reply_to_message.from_user
-    payer_name = get_display_name(payer)
-    target_name = get_display_name(target)
-
     price_per_min = load_price()
     total_stars = price_per_min * minutes
 
-    # FREE MODE
+    payer_name = get_display_name(payer)
+    target_name = get_display_name(target)
+
+    # ----- FREE MODE -----
     if price_per_min == 0:
         return apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
 
-    # REAL PAYMENT — SEND INVOICE
+    # ----- REAL STARS PAYMENT -----
     try:
         bot.send_invoice(
             chat_id=message.chat.id,
             title="Оплата мута",
             description=(
                 f"{payer_name} хочет замутить {target_name} на {minutes} минут.\n"
-                f"Цена: {total_stars} ⭐"
+                f"Стоимость: {total_stars} ⭐"
             ),
             provider_token=PROVIDER_TOKEN,
             currency="XTR",
             prices=[LabeledPrice(label="Mute", amount=total_stars)],
-            payload=f"mut:{message.chat.id}:{payer.id}:{target.id}:{minutes}"
+            invoice_payload=f"mut:{message.chat.id}:{payer.id}:{target.id}:{minutes}",
         )
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка выставления счёта: {e}")
