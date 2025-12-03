@@ -1,106 +1,127 @@
-# plugins/top_plugin.py
-
 import json
 import os
 from plugins.common import get_name
 
-TOP_FILE = "top_data.json"
+FILE = "top_data.json"
 
 
-def load_top():
-    if not os.path.exists(TOP_FILE):
+def load():
+    if not os.path.exists(FILE):
         return {}
     try:
-        with open(TOP_FILE, "r", encoding="utf8") as f:
+        with open(FILE, "r", encoding="utf8") as f:
             return json.load(f)
     except:
         return {}
 
 
-def save_top(data):
-    with open(TOP_FILE, "w", encoding="utf8") as f:
+def save(data):
+    with open(FILE, "w", encoding="utf8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def add_stat(chat_id, user, field, amount):
-    """
-    field:
-        - sisi_size (размер груди)
-        - hui_size (см)
-        - klitor_size (мм)
-    """
-
+def ensure_user(chat_id, user):
+    data = load()
     chat_id = str(chat_id)
-    user_id = str(user.id)
+    uid = str(user.id)
 
-    top = load_top()
+    if chat_id not in data:
+        data[chat_id] = {}
 
-    if chat_id not in top:
-        top[chat_id] = {}
-
-    if user_id not in top[chat_id]:
-        top[chat_id][user_id] = {
+    if uid not in data[chat_id]:
+        data[chat_id][uid] = {
             "name": get_name(user),
-            "sisi_size": 0,
-            "hui_size": 0,
-            "klitor_size": 0.0
+            "sisi": 0,
+            "hui": 0,
+            "klitor": 0.0,
+            "last_sisi": None,
+            "last_hui": None,
+            "last_klitor": None
         }
 
-    top[chat_id][user_id]["name"] = get_name(user)
-    top[chat_id][user_id][field] += amount
+    data[chat_id][uid]["name"] = get_name(user)
 
-    save_top(top)
+    save(data)
+    return data
 
 
-def format_top(chat_id):
+def update_stat(chat_id, user, field, value):
+    data = load()
     chat_id = str(chat_id)
-    top = load_top()
+    uid = str(user.id)
 
-    if chat_id not in top or not top[chat_id]:
+    data[chat_id][uid][field] += value
+    save(data)
+
+
+def update_date(chat_id, user, field):
+    data = load()
+    chat_id = str(chat_id)
+    uid = str(user.id)
+
+    data[chat_id][uid][field] = str(__import__("datetime").date.today())
+    save(data)
+
+
+def was_today(chat_id, user, field):
+    data = load()
+    chat_id = str(chat_id)
+    uid = str(user.id)
+
+    last = data[chat_id][uid][field]
+    if last is None:
+        return False
+
+    from datetime import date
+    return last == str(date.today())
+
+
+def top_for(chat_id, field, title, unit):
+    data = load()
+    chat_id = str(chat_id)
+
+    if chat_id not in data or not data[chat_id]:
         return "Тут ещё никто не играл 😢"
 
-    users = list(top[chat_id].values())
+    users = list(data[chat_id].values())
+    users.sort(key=lambda u: u[field], reverse=True)
 
-    users.sort(key=lambda u: (u["sisi_size"] + u["hui_size"] + u["klitor_size"]), reverse=True)
-
-    msg = "🏆 *ТОП игроков этого чата:*\n\n"
+    msg = f"🏆 *Топ по {title}:*\n\n"
 
     for i, u in enumerate(users, start=1):
-        msg += (
-            f"{i}. *{u['name']}*\n"
-            f"   Сиськи: {u['sisi_size']} размер\n"
-            f"   Хуй: {u['hui_size']} см\n"
-            f"   Клитор: {u['klitor_size']:.1f} мм\n\n"
-        )
+        msg += f"{i}. *{u['name']}* — {u[field]}{unit}\n"
 
     return msg
 
 
-def format_my(chat_id, user_id):
-    chat_id = str(chat_id)
-    user_id = str(user_id)
-
-    top = load_top()
-
-    if chat_id not in top or user_id not in top[chat_id]:
-        return "У тебя пока нет результатов 😢"
-
-    u = top[chat_id][user_id]
-
-    return (
-        f"📊 *Твои размеры:*\n\n"
-        f"Сиськи: {u['sisi_size']} размер\n"
-        f"Хуй: {u['hui_size']} см\n"
-        f"Клитор: {u['klitor_size']:.1f} мм"
-    )
-
-
-def handle(bot, message):
+def handle_top_sisi(bot, message):
     chat_id = message.chat.id
-    bot.reply_to(message, format_top(chat_id), parse_mode="Markdown")
+    bot.reply_to(message, top_for(chat_id, "sisi", "сисечкам", " размера"), parse_mode="Markdown")
 
 
-def handle_my(bot, message):
+def handle_top_hui(bot, message):
     chat_id = message.chat.id
-    user_id = message.from_user.id
-    bot.reply_to(message, format_my(chat_id, user_id), parse_mode="Markdown")
+    bot.reply_to(message, top_for(chat_id, "hui", "хуям", " см"), parse_mode="Markdown")
+
+
+def handle_top_klitor(bot, message):
+    chat_id = message.chat.id
+
+    data = load()
+    cid = str(chat_id)
+
+    if cid not in data:
+        return bot.reply_to(message, "Тут ещё никто не играл 😢")
+
+    # пересчёт мм → см
+    top_list = []
+    for u in data[cid].values():
+        top_list.append((u["name"], u["klitor"] / 10))
+
+    top_list.sort(key=lambda x: x[1], reverse=True)
+
+    msg = "🏆 *Топ по клиторам:*\n\n"
+    for i, (name, size) in enumerate(top_list, start=1):
+        msg += f"{i}. *{name}* — {size:.1f} см\n"
+
+    bot.reply_to(message, msg, parse_mode="Markdown")
