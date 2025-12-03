@@ -2,13 +2,12 @@ import os
 import json
 import threading
 from datetime import datetime, timedelta
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from telebot.types import Message, ChatPermissions
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions, Message
 
 DATA_FILE = "data/price.json"
 ADMIN_ID = 5791171535  # твой ID
 
-DEFAULT_PRICE = 2  # звезды за минуту
+DEFAULT_PRICE = 2  # цена в звездах за минуту
 
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -33,21 +32,34 @@ def get_display_name_from_user(user):
     return user.first_name or "Пользователь"
 
 def unmute_later(bot, chat_id, target_id, minutes):
-    """Снимаем бан через X минут"""
+    """Снимаем мут через X минут"""
     def unmute():
-        bot.unban_chat_member(chat_id, target_id)
         try:
+            perms = ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True
+            )
+            bot.restrict_chat_member(chat_id, target_id, permissions=perms)
             bot.send_message(chat_id, f"✅ <a href='tg://user?id={target_id}'>пользователь</a> снова может писать.", parse_mode="HTML")
-        except:
-            pass
+        except Exception as e:
+            bot.send_message(chat_id, f"Ошибка при снятии мута: {e}")
 
     t = threading.Timer(minutes * 60, unmute)
     t.start()
 
 def apply_mute(bot, chat_id, target_id, minutes, payer_name):
-    """Выдаем временный мут через бан/разбан"""
+    """Выдаем временный мут через restrict_chat_member"""
     try:
-        bot.ban_chat_member(chat_id, target_id)
+        perms = ChatPermissions(
+            can_send_messages=False,
+            can_send_media_messages=False,
+            can_send_other_messages=False,
+            can_add_web_page_previews=False
+        )
+        until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
+        bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
     except Exception as e:
         bot.send_message(chat_id, f"Не удалось выдать мут (ошибка API): {e}")
         return
