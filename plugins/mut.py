@@ -62,13 +62,14 @@ def apply_mute(bot: TeleBot, chat_id, target_id, minutes, payer_name):
         bot.send_message(chat_id, f"❌ Не удалось выдать мут: {e}")
         return
 
-    bot.send_message(
-        chat_id,
-        f"🔇 <a href='tg://user?id={target_id}'>Пользователь</a>, "
-        f"ты уже реально заебал…\n"
-        f"{payer_name} оплатил твоё молчание 😎💰",
-        parse_mode="HTML"
-    )
+target_name = get_display_name_by_id(bot, chat_id, target_id)
+
+bot.send_message(
+    chat_id,
+    f"🔇 {target_name}, ты уже заебал {payer_name}…\n"
+    f"Он оплатил твоё молчание 😎💰",
+    parse_mode="HTML"
+)
 
 
 # === ГЛАВНАЯ ФУНКЦИЯ ПЛАГИНА (main.py вызывает только ЭТО) ===
