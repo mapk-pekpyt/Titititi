@@ -1,37 +1,26 @@
-# plugins/common.py
-
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-# ====== Время по Германии ======
-def german_time():
-    return datetime.now(timezone.utc).astimezone()
+# Германия
+def german_date():
+    return datetime.now(timezone.utc).astimezone().date()
 
-
-# ====== Вероятности прироста ======
+# Вероятности
 def weighted_random():
     r = random.randint(1, 100)
-
-    if r <= 65:           # 1–5 наиболее частые
+    if r <= 65:
         return random.randint(1, 5)
-    elif r <= 80:         # 6–10 немного реже
+    elif r <= 85:
         return random.randint(6, 10)
-    else:                 # редкое уменьшение
+    else:
         return random.randint(-10, 0)
 
-
-# ====== Получение настоящего имени ======
+# Имя пользователя
 def get_name(user):
-    """
-    Имя профиля, НЕ username.
-    """
-    try:
-        if user.first_name and user.last_name:
-            return f"{user.first_name} {user.last_name}"
-        if user.first_name:
-            return user.first_name
-        if user.username:
-            return f"@{user.username}"
-    except:
-        pass
+    if user.first_name and user.last_name:
+        return f"{user.first_name} {user.last_name}"
+    if user.first_name:
+        return user.first_name
+    if user.username:
+        return f"@{user.username}"
     return "Безымянный"
