@@ -2,15 +2,16 @@ import os
 import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from telebot.types import LabeledPrice, ChatPermissions
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions, LabeledPrice
 from telebot import TeleBot
 
 DATA_FILE = "data/price.json"
 TZ = ZoneInfo("Europe/Berlin")
 ADMIN_ID = 5791171535  # твой id
-DEFAULT_PRICE = 2  # цена по умолчанию в телеграмм-звездах
+DEFAULT_PRICE = 2  # цена по умолчанию
 
-PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN")  # токен платежного провайдера
+# Токен провайдера для Telegram Payments
+PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN")
 
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
@@ -47,11 +48,10 @@ def apply_mute(bot: TeleBot, chat_id, target_id, minutes, payer_name):
     bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
     bot.send_message(
         chat_id,
-        f"⛔ Пользователь <a href='tg://user?id={target_id}'>пользователь</a> лишён голоса на {minutes} минут — по тому что заебал - {payer_name}",
+        f"⛔ Пользователь <a href='tg://user?id={target_id}'>пользователь</a> лишён голоса на {minutes} минут — т.к. {payer_name} оплатил(а).",
         parse_mode="HTML"
     )
 
-# Обработка команды /price
 def handle_price(bot, message):
     text = message.text or ""
     if message.from_user.id != ADMIN_ID:
@@ -73,7 +73,6 @@ def handle_price(bot, message):
     save_price(new_price)
     bot.reply_to(message, f"✅ Цена за 1 минуту установлена: {new_price} ⭐")
 
-# Обработка /mut
 def handle_mut(bot, message):
     text = (message.text or "").strip()
     if not message.reply_to_message:
@@ -97,17 +96,16 @@ def handle_mut(bot, message):
     total = price_per_min * minutes
     payer = message.from_user
     target = message.reply_to_message.from_user
-
     payer_name = get_display_name(payer)
     target_name = get_display_name(target)
 
-    # Если цена 0 — сразу выдаём мут
+    # Цена 0 — сразу выдаем мут
     if price_per_min == 0:
         apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
         return
 
-    # Отправка настоящего инвойса Telegram
-    prices = [LabeledPrice(label=f"{minutes} минута(-ы) мута {target_name}", amount=total * 100)]  # цена в копейках
+    # Отправляем инвойс Telegram
+    prices = [LabeledPrice(label=f"{minutes} минута(-ы) мута {target_name}", amount=total*100)]
     bot.send_invoice(
         chat_id=message.chat.id,
         title=f"Оплата мута {target_name}",
@@ -119,15 +117,16 @@ def handle_mut(bot, message):
         start_parameter="mutepayment"
     )
 
-# Обработка успешной оплаты
+# Обработка pre_checkout_query
 def handle_precheckout(bot, pre_checkout_query):
     bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
+# Обработка успешной оплаты
 def handle_success(bot, message):
     payload = getattr(message, "successful_payment", None)
     if not payload:
         return
-    data = payload.invoice_payload  # формат: mute:{payer_id}:{target_id}:{minutes}
+    data = payload.invoice_payload
     if not data.startswith("mute:"):
         return
     _, payer_id_s, target_id_s, minutes_s = data.split(":")
@@ -150,7 +149,3 @@ def handle(bot, message):
     if text.startswith("/mut"):
         handle_mut(bot, message)
         return
-
-# Регистрируем обработку платежей в main.py:
-# bot.pre_checkout_query_handler(func=lambda query: True)(mut.handle_precheckout)
-# bot.message_handler(content_types=['successful_payment'])(mut.handle_success)
