@@ -9,13 +9,13 @@ from telebot.types import (
 
 DATA_FILE = "data/price.json"
 TZ = ZoneInfo("Europe/Berlin")
-DEFAULT_PRICE = 2  # ⭐ за минуту
+DEFAULT_PRICE = 2  # звезды за минуту
 
-# ТВОЙ TOKEN
 PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
 
 
-# ---------------- STORAGE ----------------
+# ---------------- ФАЙЛ ЦЕНЫ ----------------
+
 def ensure_data_dir():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
 
@@ -29,13 +29,14 @@ def load_price():
         return DEFAULT_PRICE
 
 
-def save_price(p):
+def save_price(value):
     ensure_data_dir()
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({"price": int(p)}, f)
+        json.dump({"price": int(value)}, f)
 
 
-# ---------------- NAME HANDLING ----------------
+# ---------------- ИМЕНА ----------------
+
 def get_display_name(user):
     if user.username:
         return f"@{user.username}"
@@ -50,10 +51,10 @@ def get_display_name_by_id(bot, chat_id, user_id):
         return "Пользователь"
 
 
-# ---------------- MUTE APPLY ----------------
+# ---------------- ВЫДАЧА МУТА ----------------
+
 def apply_mute(bot, chat_id, target_id, minutes, payer_name):
     until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
-
     try:
         perms = ChatPermissions(
             can_send_messages=False,
@@ -63,24 +64,23 @@ def apply_mute(bot, chat_id, target_id, minutes, payer_name):
         )
         bot.restrict_chat_member(chat_id, target_id, permissions=perms, until_date=until)
     except Exception as e:
-        bot.send_message(chat_id, f"❌ Не удалось выдать мут: {e}")
-        return
+        return bot.send_message(chat_id, f"❌ Ошибка мута: {e}")
 
     target_name = get_display_name_by_id(bot, chat_id, target_id)
 
     bot.send_message(
         chat_id,
-        f"🔇 {target_name}, ты уже заебал {payer_name}…\n"
+        f"🔇 {target_name}, ты уже заебал {payer_name}.\n"
         f"Он оплатил твоё молчание 😎💰",
         parse_mode="HTML"
     )
 
 
-# ---------------- PAYMENT SUCCESS ----------------
+# ---------------- ПЛАТЕЖ УСПЕШЕН ----------------
+
 def handle_successful_payment(bot, message):
     payload = message.successful_payment.invoice_payload
 
-    # mut:<chat_id>:<payer_id>:<target_id>:<minutes>
     try:
         _, chat_id, payer_id, target_id, minutes = payload.split(":")
         chat_id = int(chat_id)
@@ -88,41 +88,39 @@ def handle_successful_payment(bot, message):
         target_id = int(target_id)
         minutes = int(minutes)
     except:
-        bot.send_message(message.chat.id, "❌ Ошибка данных платежа")
-        return
+        return bot.send_message(message.chat.id, "❌ Ошибка payload")
 
     payer_name = get_display_name_by_id(bot, chat_id, payer_id)
     apply_mute(bot, chat_id, target_id, minutes, payer_name)
 
 
-# ---------------- MAIN MUT COMMAND ----------------
+# ---------------- ОСНОВНАЯ КОМАНДА ----------------
+
 def handle(bot, message):
     text = (message.text or "").strip()
 
-    # ----- /price -----
+    # /price
     if text.startswith("/price"):
         if message.from_user.id != 5791171535:
             return bot.reply_to(message, "⛔ Только админ может менять цену.")
 
         parts = text.split()
         if len(parts) < 2:
-            return bot.reply_to(
-                message, f"Текущая цена: {load_price()} ⭐ за минуту."
-            )
+            return bot.reply_to(message, f"Текущая цена: {load_price()} ⭐/мин")
 
         try:
-            newp = int(parts[1])
-            save_price(newp)
-            return bot.reply_to(message, f"Цена обновлена: {newp} ⭐")
+            new_price = int(parts[1])
+            save_price(new_price)
+            return bot.reply_to(message, f"Новая цена: {new_price} ⭐/мин")
         except:
             return bot.reply_to(message, "Укажи число.")
 
-    # ----- /mut -----
+    # /mut
     if not text.startswith("/mut"):
         return
 
     if not message.reply_to_message:
-        return bot.reply_to(message, "Ответь на сообщение человека: /mut <минуты>")
+        return bot.reply_to(message, "Ответь на сообщение человека: /mut 5")
 
     parts = text.split()
     if len(parts) < 2:
@@ -130,36 +128,38 @@ def handle(bot, message):
 
     try:
         minutes = int(parts[1])
-        if minutes <= 0:
-            raise ValueError()
     except:
-        return bot.reply_to(message, "Минуты должны быть числом > 0")
+        return bot.reply_to(message, "Минуты должны быть числом.")
+
+    if minutes <= 0:
+        return bot.reply_to(message, "Минуты должны быть > 0")
 
     payer = message.from_user
     target = message.reply_to_message.from_user
+
     price_per_min = load_price()
-    total_stars = price_per_min * minutes
+    total = price_per_min * minutes
 
     payer_name = get_display_name(payer)
     target_name = get_display_name(target)
 
-    # ----- FREE MODE -----
+    # Бесплатный режим
     if price_per_min == 0:
         return apply_mute(bot, message.chat.id, target.id, minutes, payer_name)
 
-    # ----- REAL STARS PAYMENT -----
+    # ПЛАТЕЖИ STARS
     try:
         bot.send_invoice(
             chat_id=message.chat.id,
             title="Оплата мута",
             description=(
                 f"{payer_name} хочет замутить {target_name} на {minutes} минут.\n"
-                f"Стоимость: {total_stars} ⭐"
+                f"Стоимость: {total} ⭐"
             ),
             provider_token=PROVIDER_TOKEN,
             currency="XTR",
-            prices=[LabeledPrice(label="Mute", amount=total_stars)],
-            invoice_payload=f"mut:{message.chat.id}:{payer.id}:{target.id}:{minutes}",
+            prices=[LabeledPrice(label="Mute", amount=total)],
+            payload=f"mut:{message.chat.id}:{payer.id}:{target.id}:{minutes}"
         )
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка выставления счёта: {e}")
