@@ -1,60 +1,30 @@
-import json
-import os
-import random
-from datetime import datetime
+from plugins.common import weighted_random, get_name
+from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
 
-DATA_FILE = "data/klitor.json"
-
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    try:
-        with open(DATA_FILE, "r", encoding="utf8") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_data(data):
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def get_real_name(user):
-    return getattr(user, 'full_name', getattr(user, 'first_name', f"User{user.id}"))
 
 def handle(bot, message):
-    user_id = str(message.from_user.id)
-    user_name = get_real_name(message.from_user)
-    chat_id = str(message.chat.id)
+    user = message.from_user
+    name = get_name(user)
+    chat = message.chat.id
 
-    data = load_data()
-    if chat_id not in data:
-        data[chat_id] = {}
+    data = ensure_user(chat, user)
 
-    user_data = data[chat_id].get(user_id, {"size_mm": 0, "last_play": None})
+    if was_today(chat, user, "last_klitor"):
+        mm = data[str(chat)][str(user.id)]["klitor"]
+        return bot.reply_to(
+            message,
+            f"{name}, шалунишка ты мой, думал не замечу? "
+            f"Ты уже играл сегодня и твоя валына сейчас {mm/10:.1f}см 😳🍑"
+        )
 
-    last_play = user_data.get("last_play")
-    today = datetime.now().date()
-    if last_play:
-        last_play_date = datetime.fromisoformat(last_play).date()
-        if last_play_date == today:
-            bot.send_message(chat_id, f"{user_name}, ты уже играл сегодня 😅\nТекущий клитор: {user_data['size_mm']} мм")
-            return
+    delta_mm = weighted_random() * 1.0  # мм
+    update_stat(chat, user, "klitor", delta_mm)
+    update_date(chat, user, "last_klitor")
 
-    roll = random.randint(1, 100)
-    if roll <= 70:
-        delta = random.randint(1, 5)
-    elif roll <= 85:
-        delta = random.randint(-10, 0)
-    else:
-        delta = random.randint(6, 10)
+    new_mm = data[str(chat)][str(user.id)]["klitor"] + delta_mm
 
-    new_size = max(user_data["size_mm"] + delta, 0)
-    user_data.update({
-        "size_mm": new_size,
-        "last_play": datetime.now().isoformat()
-    })
-    data[chat_id][user_id] = user_data
-    save_data(data)
-
-    bot.send_message(chat_id, f"💎 {user_name}, твой клитор вырос на {delta} мм!\nТеперь текущий размер: {new_size} мм")
+    bot.reply_to(
+        message,
+        f"{name}, твой клитор вырос на {delta_mm:+.1f}мм, "
+        f"теперь эта валына {new_mm/10:.1f}см 😳🍑"
+    )
