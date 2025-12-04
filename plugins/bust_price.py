@@ -7,7 +7,6 @@ os.makedirs("data", exist_ok=True)
 
 ADMIN_ID = 5791171535
 
-
 def load_boost_price():
     if not os.path.exists(FILE):
         return 0
@@ -17,17 +16,18 @@ def load_boost_price():
     except:
         return 0
 
-
 def save_boost_price(v: int):
     with open(FILE, "w", encoding="utf8") as f:
         json.dump({"price": v}, f, ensure_ascii=False, indent=2)
 
+# чтобы старый импорт работал в играх
+load_price = load_boost_price
+save_price = save_boost_price
 
 def handle(bot, message):
     text = (message.text or "").strip().lower()
-
     if not text.startswith("/boostprice"):
-        return  # НЕ наша команда — выходим
+        return
 
     parts = text.split()
 
@@ -35,7 +35,7 @@ def handle(bot, message):
     if len(parts) == 1:
         return bot.reply_to(
             message,
-            f"💫 Текущая цена буста: {load_boost_price()} ⭐"
+            f"💫 Текущая цена буста: {load_price()} ⭐"
         )
 
     # менять цену может только админ
@@ -45,7 +45,7 @@ def handle(bot, message):
     # изменить цену
     try:
         value = int(parts[1])
-        save_boost_price(value)
+        save_price(value)
         return bot.reply_to(message, f"✅ Цена буста обновлена: {value} ⭐")
     except:
         return bot.reply_to(message, "❗ Использование: /boostprice 5")
