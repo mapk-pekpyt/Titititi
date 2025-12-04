@@ -1,7 +1,7 @@
 import os
 import json
 from telebot.types import LabeledPrice
-from common import weighted_random, german_date, get_name
+from .common import weighted_random, german_date, get_name
 
 DATA_FILE = "data/sisi.json"
 BOOST_PRICE_FILE = "data/boostprice.json"
