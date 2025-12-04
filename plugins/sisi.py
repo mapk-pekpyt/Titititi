@@ -1,70 +1,94 @@
-# plugins/sisi.py
 import os
+import json
 from telebot.types import LabeledPrice
-from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
-from plugins.common import weighted_random, get_name
-from plugins.bust_price import get_price
-import os
+from common import weighted_random, german_date, get_name
 
-PROVIDER_TOKEN = os.environ.get("PROVIDER_TOKEN", "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA")
+DATA_FILE = "data/sisi.json"
+BOOST_PRICE_FILE = "data/boostprice.json"
+PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
+
+
+def load_price():
+    try:
+        with open(BOOST_PRICE_FILE, "r", encoding="utf-8") as f:
+            return int(json.load(f).get("price", 0))
+    except:
+        return 0
+
+
+def load_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+
+def save_data(d):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+
+
+def handle_successful(bot, message):
+    payload = message.successful_payment.invoice_payload
+
+    if not payload.startswith("sisi:"):
+        return
+
+    _, user_id_s = payload.split(":")
+    uid = int(user_id_s)
+
+    data = load_data()
+    user = data.get(str(uid), {"size": 0, "date": "2000-01-01"})
+
+    grow = weighted_random()
+    user["size"] = max(0, user["size"] + grow)
+
+    data[str(uid)] = user
+    save_data(data)
+
+    bot.send_message(message.chat.id, f"🔥 Твой буст сисек: +{grow} см! Теперь: {user['size']} см 🍒")
+
 
 def handle(bot, message):
-    user = message.from_user
-    chat = message.chat.id
-    name = get_name(user)
+    text = message.text.lower()
 
-    # гарантируем запись в базе top_plugin
-    ensure_user(chat, user)
+    # daily
+    if text.startswith("/sisi"):
+        uid = message.from_user.id
+        d = load_data()
+        today = str(german_date())
+        user = d.get(str(uid), {"size": 0, "date": "2000-01-01"})
 
-    text = (message.text or "").strip()
-    cmd = text.split()[0].lower()
+        if user["date"] == today:
+            bot.reply_to(message, f"⏳ Уже росло сегодня! Сейчас: {user['size']} см")
+            return
 
-    # ---- ежедневная игра /sisi ----
-    if cmd == "/sisi":
-        if was_today(chat, user, "last_sisi"):
-            data = ensure_user(chat, user)
-            current = data[str(chat)][str(user.id)]["sisi"]
-            return bot.reply_to(
-                message,
-                f"{name}, шалунишка ты мой, думал не замечу? Ты уже играл сегодня и твои вишенки сейчас {current} размера 😳🍒"
-            )
-        delta = weighted_random()
-        # обновляем статистику через top_plugin
-        update_stat(chat, user, "sisi", delta)
-        update_date(chat, user, "last_sisi")
-        data = ensure_user(chat, user)
-        new_size = data[str(chat)][str(user.id)]["sisi"]
-        return bot.reply_to(
-            message,
-            f"{name}, твои сисечки выросли на {delta:+d}, теперь твоя грудь {new_size} размера 😳🍒"
+        grow = weighted_random()
+        user["size"] = max(0, user["size"] + grow)
+        user["date"] = today
+
+        d[str(uid)] = user
+        save_data(d)
+
+        bot.reply_to(message, f"🌸 Сегодня рост: +{grow} см\nТвои сиси: {user['size']} см")
+        return
+
+    # boost
+    if text.startswith("/boosts"):
+        price = load_price()
+        uid = message.from_user.id
+
+        if price <= 0:
+            bot.reply_to(message, "Буст бесплатный. Просто жми /sisi")
+            return
+
+        bot.send_invoice(
+            chat_id=message.chat.id,
+            title="Boost Sisi",
+            description="Увеличение размера сисек",
+            invoice_payload=f"sisi:{uid}",
+            provider_token=PROVIDER_TOKEN,
+            currency="XTR",
+            prices=[LabeledPrice("Boost", price)]
         )
-
-    # ---- платный boost /boosts <amount> ----
-    if cmd == "/boosts":
-        parts = text.split()
-        if len(parts) < 2:
-            return bot.reply_to(message, "Использование: /boosts <положительное число>")
-        try:
-            boost = int(parts[1])
-            if boost <= 0:
-                raise ValueError
-        except:
-            return bot.reply_to(message, "Укажи корректное положительное целое число.")
-        price_per_unit = get_price()  # цена из plugins/bust_price.py
-        total_price = max(1, int(price_per_unit * boost))  # минимум 1
-        prices = [LabeledPrice(label=f"Boost x{boost}", amount=total_price)]
-        payload = f"boost_sisi:{chat}:{user.id}:{boost}"
-        # отправляем настоящий инвойс Telegram (Stars)
-        try:
-            bot.send_invoice(
-                message.chat.id,
-                title=f"Boost груди +{boost}",
-                description=f"Увеличение груди на {boost} размера(ов)",
-                invoice_payload=payload,
-                provider_token=PROVIDER_TOKEN,
-                currency="XTR",
-                prices=prices,
-                start_parameter="boost_sisi"
-            )
-        except Exception as e:
-            return bot.reply_to(message, f"❌ Ошибка создания счёта: {e}")
