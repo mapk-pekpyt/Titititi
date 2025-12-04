@@ -1,80 +1,70 @@
-import os
-import telebot
 from plugins.common import weighted_random, get_name
 from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
-from plugins.bust_price import load_price
-from plugins.bust_command import handle_bustprice
-
+from plugins.bust_price import price_data
 
 def handle(bot, message):
-    if message.text.startswith("/bustprice"):
-        return handle_bustprice(bot, message)
-
-    if message.text.startswith("/busth"):
-        return bust(bot, message)
-
     user = message.from_user
     name = get_name(user)
     chat = message.chat.id
-
     data = ensure_user(chat, user)
 
     if was_today(chat, user, "last_hui"):
         current = data[str(chat)][str(user.id)]["hui"]
-        return bot.reply_to(message, f"{name}, сегодня уже играла, размер {current} 🍆")
+        return bot.reply_to(
+            message,
+            f"{name}, мой хорошенький, уже баловался сегодня… "
+            f"Твой дружок сейчас {current} см 🍆"
+        )
 
     delta = weighted_random()
-    new_val = max(0, data[str(chat)][str(user.id)]["hui"] + delta)
+    if delta < 0:
+        delta = abs(delta)
 
     update_stat(chat, user, "hui", delta)
     update_date(chat, user, "last_hui")
 
-    bot.reply_to(message, f"{name}, хуй вырос на {delta:+}, теперь {new_val} 🍆🔥")
+    new_size = data[str(chat)][str(user.id)]["hui"]
+
+    bot.reply_to(
+        message,
+        f"{name}, твой хуй вырос на {delta:+}, теперь его длина {new_size} см 🍆🔥"
+    )
 
 
-def bust(bot, message):
-    user = message.from_user
+def handle_bust(bot, message):
     chat = message.chat.id
+    user = message.from_user
+    name = get_name(user)
 
-    parts = message.text.split()
-    if len(parts) < 2:
-        return bot.reply_to(message, "Использование: /busth 5")
+    args = message.text.split()
+    if len(args) < 2:
+        return bot.reply_to(message, "Укажи, на сколько увеличить. Например:\n/busth 2")
 
     try:
-        amount = int(parts[1])
+        amount = float(args[1])
     except:
-        return bot.reply_to(message, "Нужно число: /busth 5")
+        return bot.reply_to(message, "Введи число.")
 
     if amount <= 0:
-        return bot.reply_to(message, "Буст должен быть положительным!")
+        return bot.reply_to(message, "Только положительное число!")
 
-    price = load_price()["price"]
-
-    invoice = telebot.types.LabeledPrice(
-        label=f"Буст хуя +{amount}",
-        amount=price * 100
-    )
+    price = price_data.get("bust_price", 50)
 
     bot.send_invoice(
         chat_id=chat,
         title="Буст хуя",
-        description=f"Увеличение на +{amount}",
-        provider_token=os.environ.get("PAY_TOKEN"),
-        currency="EUR",
-        prices=[invoice],
-        payload=f"bust_hui:{amount}"
+        description=f"+{amount} см к длине",
+        payload=f"bust_hui|{amount}",
+        provider_token=None,
+        currency="XTR",
+        prices=[{"label": "Boost", "amount": int(price)}],
+        start_parameter="boost-hui"
     )
 
 
-def after_payment(bot, message, amount):
-    user = message.from_user
-    chat = message.chat.id
-    name = get_name(user)
-
+def boost_success(chat, user, amount):
     data = ensure_user(chat, user)
-    current = data[str(chat)][str(user.id)]["hui"]
+    if amount < 0:
+        amount = abs(amount)
 
-    new_val = max(0, current + amount)
-    update_stat(chat, user, "hui", amount)
-
-    bot.send_message(chat, f"✨ {name}, буст хую +{amount}! Теперь {new_val} 🍆🔥")
+    data[str(chat)][str(user.id)]["hui"] += amount
