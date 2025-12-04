@@ -1,17 +1,19 @@
 import json
 import os
 
-FILE = "bust_price.json"
+FILE_PATH = "bust_price.json"
 
-# если файла нет — создаём с дефолтной ценой 1 евро
-if not os.path.exists(FILE):
-    with open(FILE, "w") as f:
-        json.dump({"price": 1}, f)
+# Загружаем / создаём цену буста
+if os.path.exists(FILE_PATH):
+    try:
+        with open(FILE_PATH, "r") as f:
+            price_data = json.load(f)
+    except:
+        price_data = {"bust_price": 50}
+else:
+    price_data = {"bust_price": 50}
 
-def load_price():
-    with open(FILE, "r") as f:
-        return json.load(f)
 
-def save_price(new_price: int):
-    with open(FILE, "w") as f:
-        json.dump({"price": new_price}, f)
+def save_price():
+    with open(FILE_PATH, "w") as f:
+        json.dump(price_data, f)
