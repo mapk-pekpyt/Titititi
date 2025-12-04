@@ -1,19 +1,30 @@
-import json
 import os
+from telebot.types import Message
 
-FILE_PATH = "bust_price.json"
+BUST_PRICE_FILE = "plugins/bust_price.py"
+ADMIN_ID = 5791171535  # твой ID
 
-# Загружаем / создаём цену буста
-if os.path.exists(FILE_PATH):
+def handle_boostprice(bot, message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return bot.reply_to(message, "⛔ Только админ может менять цену буста.")
+
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        # показать текущую цену
+        try:
+            from plugins import bust_price
+            current_price = int(bust_price.price_data)
+        except:
+            current_price = 0
+        return bot.reply_to(message, f"Текущая цена буста: {current_price} ⭐")
+
     try:
-        with open(FILE_PATH, "r") as f:
-            price_data = json.load(f)
+        new_price = int(parts[1])
     except:
-        price_data = {"bust_price": 50}
-else:
-    price_data = {"bust_price": 50}
+        return bot.reply_to(message, "❗ Укажи целое число: /boostprice 1000")
 
+    # сохраняем в файл
+    with open(BUST_PRICE_FILE, "w", encoding="utf-8") as f:
+        f.write(f"price_data = {new_price}")
 
-def save_price():
-    with open(FILE_PATH, "w") as f:
-        json.dump(price_data, f)
+    bot.reply_to(message, f"✅ Цена буста установлена: {new_price} ⭐")
