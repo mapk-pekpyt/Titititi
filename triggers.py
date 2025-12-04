@@ -19,4 +19,8 @@ TRIGGERS = {
 
     "/kto": "kto",
     "/kto@Sisititibot": "kto",
+    "/busts": "sisi",
+    "/busth": "hui",
+    "/bustk": "klitor",
+    "/bustprice": "sisi",   # можно любой — он общий
 }
