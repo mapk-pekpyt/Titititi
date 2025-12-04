@@ -15,7 +15,7 @@ PLUGINS = {
     "mut": mut,
     "top_plugin": top_plugin,
     "kto": kto,
-    bust_price,
+    "bust_price": bust_price,
 }
 
 # Обработчик /my
