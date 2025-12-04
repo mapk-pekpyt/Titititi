@@ -1,7 +1,7 @@
 import telebot
 import os
 from triggers import TRIGGERS
-from plugins import sisi, hui, klitor, mut, top_plugin, kto, bust
+from plugins import sisi, hui, klitor, mut, top_plugin, kto
 
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
@@ -15,7 +15,6 @@ PLUGINS = {
     "mut": mut,
     "top_plugin": top_plugin,
     "kto": kto,
-    "bust": bust,
 }
 
 # Обработчик /my
