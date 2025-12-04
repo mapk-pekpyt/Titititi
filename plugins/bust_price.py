@@ -2,52 +2,50 @@
 import os
 import json
 
-DATA_FILE = "data/boostprice.json"
-ADMIN_ID = 5791171535  # твой id — при необходимости поменяй
-
+FILE = "data/boostprice.json"
 os.makedirs("data", exist_ok=True)
 
-def load_price():
+ADMIN_ID = 5791171535
+
+
+def load_boost_price():
+    if not os.path.exists(FILE):
+        return 0
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return int(json.load(f).get("price", 0))
+        with open(FILE, "r", encoding="utf8") as f:
+            return json.load(f).get("price", 0)
     except:
         return 0
 
-def save_price(v: int):
-    try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump({"price": int(v)}, f)
-        return True
-    except:
-        return False
+
+def save_boost_price(v: int):
+    with open(FILE, "w", encoding="utf8") as f:
+        json.dump({"price": v}, f, ensure_ascii=False, indent=2)
+
 
 def handle(bot, message):
-    text = (message.text or "").strip()
-    if not text:
-        return
-    cmd_raw = text.split()[0].lower()
-    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+    text = (message.text or "").strip().lower()
 
-    if cmd != "/boostprice":
-        return
+    if not text.startswith("/boostprice"):
+        return  # НЕ наша команда — выходим
 
     parts = text.split()
+
+    # показать цену
     if len(parts) == 1:
-        p = load_price()
-        bot.reply_to(message, f"💰 Текущая цена буста: {p} ⭐")
-        return
+        return bot.reply_to(
+            message,
+            f"💫 Текущая цена буста: {load_boost_price()} ⭐"
+        )
 
-    # change price: only admin
+    # менять цену может только админ
     if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "⛔ Только админ может менять цену.")
-        return
+        return bot.reply_to(message, "⛔ Только админ может менять цену буста.")
 
+    # изменить цену
     try:
-        newp = int(parts[1])
+        value = int(parts[1])
+        save_boost_price(value)
+        return bot.reply_to(message, f"✅ Цена буста обновлена: {value} ⭐")
     except:
-        bot.reply_to(message, "❗ Используй: /boostprice 5")
-        return
-
-    save_price(newp)
-    bot.reply_to(message, f"✅ Цена буста обновлена: {newp} ⭐")
+        return bot.reply_to(message, "❗ Использование: /boostprice 5")
