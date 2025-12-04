@@ -1,94 +1,97 @@
-import os
-import json
-from telebot.types import LabeledPrice
+# plugins/sisi.py
 from .common import weighted_random, german_date, get_name
+from .top_plugin import ensure_user, update_stat, update_date, was_today, load
+from .bust_price import load_price
+from telebot.types import LabeledPrice
 
-DATA_FILE = "data/sisi.json"
-BOOST_PRICE_FILE = "data/boostprice.json"
 PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
 
-
-def load_price():
-    try:
-        with open(BOOST_PRICE_FILE, "r", encoding="utf-8") as f:
-            return int(json.load(f).get("price", 0))
-    except:
-        return 0
-
-
-def load_data():
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
-
-
-def save_data(d):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=2)
-
+# вспомогательный: положительный взвешенный для буста
+def weighted_boost_positive():
+    r = __import__("random").randint(1,100)
+    if r <= 65:
+        return __import__("random").randint(1,5)
+    elif r <= 85:
+        return __import__("random").randint(6,8)
+    else:
+        return __import__("random").randint(9,10)
 
 def handle_successful(bot, message):
-    payload = message.successful_payment.invoice_payload
-
-    if not payload.startswith("sisi:"):
+    # payload: boost:sisi:{chat_id}:{payer_id}
+    payload = getattr(message.successful_payment, "invoice_payload", "") or ""
+    if not payload.startswith("boost:sisi:"):
+        return
+    try:
+        _, _, chat_s, payer_s = payload.split(":")
+        chat_id = int(chat_s); payer_id = int(payer_s)
+    except:
         return
 
-    _, user_id_s = payload.split(":")
-    uid = int(user_id_s)
-
-    data = load_data()
-    user = data.get(str(uid), {"size": 0, "date": "2000-01-01"})
-
-    grow = weighted_random()
-    user["size"] = max(0, user["size"] + grow)
-
-    data[str(uid)] = user
-    save_data(data)
-
-    bot.send_message(message.chat.id, f"🔥 Твой буст сисек: +{grow} см! Теперь: {user['size']} см 🍒")
-
+    # ensure and apply positive boost to payer
+    # use top_plugin functions to update central data
+    dummy_user = type("U",(object,),{"id": payer_id})
+    ensure_user(chat_id, dummy_user)
+    boost = weighted_boost_positive()
+    update_stat(chat_id, dummy_user, "sisi", boost)
+    # don't touch last_sisi date (boost is separate)
+    data = load()
+    new_size = data[str(chat_id)][str(payer_id)]["sisi"]
+    name = data[str(chat_id)][str(payer_id)]["name"]
+    bot.send_message(chat_id, f"🎉 {name}, твой буст: +{boost}, теперь твоя грудь {new_size} размера 😳🍒")
 
 def handle(bot, message):
-    text = message.text.lower()
+    text = (message.text or "").strip()
+    if not text:
+        return
+    cmd_raw = text.split()[0].lower()
+    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+    chat_id = message.chat.id
+    uid = message.from_user.id
+    name = get_name(message.from_user)
 
-    # daily
-    if text.startswith("/sisi"):
-        uid = message.from_user.id
-        d = load_data()
-        today = str(german_date())
-        user = d.get(str(uid), {"size": 0, "date": "2000-01-01"})
-
-        if user["date"] == today:
-            bot.reply_to(message, f"⏳ Уже росло сегодня! Сейчас: {user['size']} см")
+    # DAILY /sisi
+    if cmd == "/sisi":
+        ensure_user(chat_id, message.from_user)
+        if was_today(chat_id, message.from_user, "last_sisi"):
+            # get current
+            data = load()
+            current = data[str(chat_id)][str(uid)]["sisi"]
+            bot.reply_to(message,
+                f"{name}, шалунишка ты мой, думал не замечу? "
+                f"Ты уже играл сегодня и твои вишенки сейчас {current} размера 😳🍒"
+            )
             return
 
-        grow = weighted_random()
-        user["size"] = max(0, user["size"] + grow)
-        user["date"] = today
-
-        d[str(uid)] = user
-        save_data(d)
-
-        bot.reply_to(message, f"🌸 Сегодня рост: +{grow} см\nТвои сиси: {user['size']} см")
+        delta = weighted_random()
+        # update stat (update_stat will add delta)
+        update_stat(chat_id, message.from_user, "sisi", delta)
+        update_date(chat_id, message.from_user, "last_sisi")
+        data = load()
+        new_size = max(0, data[str(chat_id)][str(uid)]["sisi"])
+        sign = f"{delta:+d}"
+        bot.reply_to(message,
+            f"{name}, твои сисечки выросли на {sign}, теперь твоя грудь {new_size} размера 😳🍒"
+        )
         return
 
-    # boost
-    if text.startswith("/boosts"):
+    # BOOST /boosts
+    if cmd == "/boosts":
         price = load_price()
-        uid = message.from_user.id
-
         if price <= 0:
-            bot.reply_to(message, "Буст бесплатный. Просто жми /sisi")
+            bot.reply_to(message, "Буст бесплатный — просто используй /sisi и получишь шанс.")
             return
-
-        bot.send_invoice(
-            chat_id=message.chat.id,
-            title="Boost Sisi",
-            description="Увеличение размера сисек",
-            invoice_payload=f"sisi:{uid}",
-            provider_token=PROVIDER_TOKEN,
-            currency="XTR",
-            prices=[LabeledPrice("Boost", price)]
-        )
+        # invoice payload: boost:sisi:{chat_id}:{payer_id}
+        payload = f"boost:sisi:{chat_id}:{uid}"
+        prices = [LabeledPrice("Boost Sisi", price)]
+        try:
+            bot.send_invoice(
+                chat_id=chat_id,
+                title="Boost Sisi",
+                description=f"{name} покупает буст сисек",
+                invoice_payload=payload,
+                provider_token=PROVIDER_TOKEN,
+                currency="XTR",
+                prices=prices
+            )
+        except Exception as e:
+            bot.reply_to(message, f"❌ Ошибка при выставлении счёта: {e}")
