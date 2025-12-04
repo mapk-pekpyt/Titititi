@@ -24,7 +24,7 @@ def handle(bot, message):
             current = data[str(chat)][str(user.id)]["hui"]
             return bot.reply_to(
                 message,
-                f"{name}, шалунишка ты мой, думал не замечу? Ты уже играл сегодня и твой хуй сейчас {current} см 😳🍌"
+                f"{name}, шалунишка ты мой, думал не замечу? Ты уже играл сегодня и твой болтяра сейчас {current} см 😳🍌"
             )
         delta = weighted_random()
         update_stat(chat, user, "hui", delta)
@@ -33,7 +33,7 @@ def handle(bot, message):
         new_size = data[str(chat)][str(user.id)]["hui"]
         return bot.reply_to(
             message,
-            f"{name}, твой хуй вырос на {delta:+d} см, теперь он {new_size} см 😳🍌"
+            f"{name}, твой болтик стал больше на {delta:+d} см, теперь он {new_size} см 😳🍌"
         )
 
     # ---- платный boost /boosth <amount> ----
