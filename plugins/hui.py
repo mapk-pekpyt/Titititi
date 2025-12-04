@@ -1,70 +1,58 @@
-from plugins.common import weighted_random, get_name
-from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
-from plugins.bust_price import price_data
+from plugins.common import weighted_random, get_name, ensure_user, update_stat, update_date, was_today
+from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
-def handle(bot, message):
+def handle(bot, message: Message):
     user = message.from_user
-    name = get_name(user)
     chat = message.chat.id
+    name = get_name(user)
+
     data = ensure_user(chat, user)
 
-    if was_today(chat, user, "last_hui"):
-        current = data[str(chat)][str(user.id)]["hui"]
-        return bot.reply_to(
+    text = (message.text or "").split()
+    cmd = text[0].lower()
+
+    # ===== Ежедневная игра =====
+    if cmd == "/hui":
+        if was_today(chat, user, "last_hui"):
+            current = data[str(chat)][str(user.id)]["hui"]
+            return bot.reply_to(
+                message,
+                f"{name}, шалунишка ты мой, думал не замечу? "
+                f"Ты уже играл сегодня и твой хуй сейчас {current} см 😳🍆"
+            )
+        delta = weighted_random()
+        new_size = max(0, data[str(chat)][str(user.id)]["hui"] + delta)
+        update_stat(chat, user, "hui", delta)
+        update_date(chat, user, "last_hui")
+        bot.reply_to(
             message,
-            f"{name}, мой хорошенький, уже баловался сегодня… "
-            f"Твой дружок сейчас {current} см 🍆"
+            f"{name}, твой хуй вырос на {delta:+}, теперь он {new_size} см 😳🍆"
         )
+        return
 
-    delta = weighted_random()
-    if delta < 0:
-        delta = abs(delta)
+    # ===== Платный буст =====
+    if cmd == "/boosth":
+        if len(text) < 2:
+            return bot.reply_to(message, "Использование: /boosth <число>")
+        try:
+            boost = float(text[1])
+            if boost <= 0:
+                raise ValueError()
+        except:
+            return bot.reply_to(message, "Введите положительное число!")
 
-    update_stat(chat, user, "hui", delta)
-    update_date(chat, user, "last_hui")
+        try:
+            from plugins import bust_price
+            price = int(bust_price.price_data)
+        except:
+            price = 0
 
-    new_size = data[str(chat)][str(user.id)]["hui"]
+        markup = InlineKeyboardMarkup()
+        cb_data = f"boost_hui:{user.id}:{boost}"
+        markup.add(InlineKeyboardButton(text=f"💫 Оплатить {price} ⭐", callback_data=cb_data))
 
-    bot.reply_to(
-        message,
-        f"{name}, твой хуй вырос на {delta:+}, теперь его длина {new_size} см 🍆🔥"
-    )
-
-
-def handle_bust(bot, message):
-    chat = message.chat.id
-    user = message.from_user
-    name = get_name(user)
-
-    args = message.text.split()
-    if len(args) < 2:
-        return bot.reply_to(message, "Укажи, на сколько увеличить. Например:\n/busth 2")
-
-    try:
-        amount = float(args[1])
-    except:
-        return bot.reply_to(message, "Введи число.")
-
-    if amount <= 0:
-        return bot.reply_to(message, "Только положительное число!")
-
-    price = price_data.get("bust_price", 50)
-
-    bot.send_invoice(
-        chat_id=chat,
-        title="Буст хуя",
-        description=f"+{amount} см к длине",
-        payload=f"bust_hui|{amount}",
-        provider_token=None,
-        currency="XTR",
-        prices=[{"label": "Boost", "amount": int(price)}],
-        start_parameter="boost-hui"
-    )
-
-
-def boost_success(chat, user, amount):
-    data = ensure_user(chat, user)
-    if amount < 0:
-        amount = abs(amount)
-
-    data[str(chat)][str(user.id)]["hui"] += amount
+        bot.send_message(
+            chat,
+            f"{name} хочет увеличить хуй на {boost}. Для оплаты нажмите кнопку ниже.",
+            reply_markup=markup
+        )
