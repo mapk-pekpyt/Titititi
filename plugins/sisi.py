@@ -1,78 +1,92 @@
-# plugins/sisi.py
-import json
+import os
+import telebot
 from plugins.common import weighted_random, get_name
-from plugins.top_plugin import ensure_user, update_date, was_today
-from plugins.bust_price import load_price, save_price
-from telebot.types import LabeledPrice
+from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
+from plugins.bust_price import load_price
+from plugins.bust_command import handle_bustprice
 
-PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
-ADMIN_ID = 5791171535
 
-# ---- Helpers ----
-def safe_get_user_data(data, chat, user):
-    chat_s = str(chat)
-    uid = str(user.id)
-    if chat_s not in data:
-        data[chat_s] = {}
-    if uid not in data[chat_s]:
-        # seed fields expected by top_plugin structure
-        data[chat_s][uid] = {"sisi": 0, "hui": 0, "klit": 0, "stars": 0}
-    return data[chat_s][uid]
-
-# ---- Main game handler (/sisi) ----
 def handle(bot, message):
+    # /bustprice — отдельная команда!
+    if message.text.startswith("/bustprice"):
+        return handle_bustprice(bot, message)
+
+    if message.text.startswith("/busts"):
+        return bust(bot, message)
+
+    # Обычная игра
     user = message.from_user
-    chat = message.chat.id
     name = get_name(user)
-
-    data = ensure_user(chat, user)  # expected to return the whole structure
-    user_data = safe_get_user_data(data, chat, user)
-
-    if was_today(chat, user, "last_sisi"):
-        cur = user_data.get("sisi", 0)
-        if cur < 0:
-            user_data["sisi"] = 0
-            cur = 0
-        return bot.reply_to(message, f"{name}, шалунишка ты мой, думал не замечу? Ты уже играл сегодня и твои вишенки сейчас {cur} размера 😳🍒")
-
-    delta = weighted_random()
-    old = user_data.get("sisi", 0)
-    new = old + delta
-    if new < 0:
-        delta = -old
-        new = 0
-    user_data["sisi"] = new
-    update_date(chat, user, "last_sisi")
-    bot.reply_to(message, f"{name}, твои сисечки выросли на {delta:+}, теперь твоя грудь {new} размера 😳🍒")
-
-# ---- /busts (buy boost with stars) ----
-def handle_busts(bot, message):
-    user = message.from_user
     chat = message.chat.id
-    name = get_name(user)
 
     data = ensure_user(chat, user)
-    user_data = safe_get_user_data(data, chat, user)
 
-    price = load_price()
-    if user_data.get("stars", 0) < price:
-        return bot.reply_to(message, f"{name}, у тебя недостаточно ⭐ — нужно {price}")
-    user_data["stars"] = user_data.get("stars", 0) - price
-    user_data["sisi"] = user_data.get("sisi", 0) + 1
-    bot.reply_to(message, f"{name}, ✨ буст применён — теперь твоя грудь {user_data['sisi']} размера 🍒")
+    if was_today(chat, user, "last_sisi"):
+        current = data[str(chat)][str(user.id)]["sisi"]
+        return bot.reply_to(
+            message,
+            f"{name}, сегодня уже играла, твой размер {current} 😳🍒"
+        )
 
-# ---- /bustprice (global price change) ----
-def handle_bustprice(bot, message):
-    parts = (message.text or "").split()
-    if len(parts) == 1:
-        bot.reply_to(message, f"Текущая цена буста: {load_price()} ⭐")
-        return
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "⛔ Только админ может менять цену.")
-        return
+    delta = weighted_random()
+    new_val = max(0, data[str(chat)][str(user.id)]["sisi"] + delta)
+
+    update_stat(chat, user, "sisi", delta)
+    update_date(chat, user, "last_sisi")
+
+    bot.reply_to(
+        message,
+        f"{name}, твои сисечки выросли на {delta:+}, теперь размер {new_val} 😳🍒"
+    )
+
+
+def bust(bot, message):
+    user = message.from_user
+    chat = message.chat.id
+    name = get_name(user)
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        return bot.reply_to(message, "Использование: /busts 5")
+
     try:
-        v = int(parts[1])
+        amount = int(parts[1])
     except:
-        return bot.reply_to(message, "Использование: /bustprice 5")
-    save_price(v)
-    bot.reply_to(message, f"✅ Глобальная цена буста установлена: {v} ⭐")
+        return bot.reply_to(message, "Нужно число: /busts 5")
+
+    if amount <= 0:
+        return bot.reply_to(message, "Буст должен быть положительным!")
+
+    price = load_price()["price"]
+
+    invoice = telebot.types.LabeledPrice(
+        label=f"Буст груди +{amount}",
+        amount=price * 100
+    )
+
+    bot.send_invoice(
+        chat_id=chat,
+        title="Буст груди",
+        description=f"Увеличение размера груди на +{amount}",
+        provider_token=os.environ.get("PAY_TOKEN"),
+        currency="EUR",
+        prices=[invoice],
+        payload=f"bust_sisi:{amount}"
+    )
+
+
+def after_payment(bot, message, amount):
+    user = message.from_user
+    name = get_name(user)
+    chat = message.chat.id
+
+    data = ensure_user(chat, user)
+    current = data[str(chat)][str(user.id)]["sisi"]
+
+    new_val = max(0, current + amount)
+    update_stat(chat, user, "sisi", amount)
+
+    bot.send_message(
+        chat,
+        f"✨ {name}, буст успешен! +{amount}, теперь размер {new_val} 😳🍒"
+    )
