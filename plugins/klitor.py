@@ -1,67 +1,98 @@
-# plugins/klitor.py
 import os
+import json
 from telebot.types import LabeledPrice
-from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
-from plugins.common import weighted_random, get_name
-from plugins.bust_price import get_price
+from common import weighted_random, german_date, get_name
 
-PROVIDER_TOKEN = os.environ.get("PROVIDER_TOKEN", "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA")
+DATA_FILE = "data/klitor.json"
+BOOST_PRICE_FILE = "data/boostprice.json"
+PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
+
+
+def load_price():
+    try:
+        with open(BOOST_PRICE_FILE, "r") as f:
+            return int(json.load(f).get("price", 0))
+    except:
+        return 0
+
+
+def mm_to_cm(mm):
+    return round(mm / 10, 1)
+
+
+def load_data():
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+
+def save_data(d):
+    with open(DATA_FILE, "w") as f:
+        json.dump(d, f, indent=2)
+
+
+def handle_successful(bot, message):
+    payload = message.successful_payment.invoice_payload
+    if not payload.startswith("klitor:"):
+        return
+
+    _, uid_s = payload.split(":")
+    uid = int(uid_s)
+
+    data = load_data()
+    user = data.get(str(uid), {"mm": 0, "date": "2000-01-01"})
+
+    grow = weighted_random()
+    user["mm"] = max(0, user["mm"] + grow)
+
+    data[str(uid)] = user
+    save_data(data)
+
+    bot.send_message(
+        message.chat.id,
+        f"💦 Буст клитора: +{grow} мм → {mm_to_cm(user['mm'])} см"
+    )
+
 
 def handle(bot, message):
-    user = message.from_user
-    chat = message.chat.id
-    name = get_name(user)
+    text = message.text.lower()
 
-    ensure_user(chat, user)
+    if text.startswith("/klitor"):
+        uid = message.from_user.id
+        d = load_data()
+        today = str(german_date())
+        user = d.get(str(uid), {"mm": 0, "date": "2000-01-01"})
 
-    text = (message.text or "").strip()
-    cmd = text.split()[0].lower()
+        if user["date"] == today:
+            bot.reply_to(message, f"⏳ Уже рос сегодня! Сейчас: {mm_to_cm(user['mm'])} см")
+            return
 
-    # ---- ежедневная игра /klitor ----
-    if cmd == "/klitor":
-        if was_today(chat, user, "last_klitor"):
-            data = ensure_user(chat, user)
-            current = data[str(chat)][str(user.id)]["klitor"]
-            # top_plugin stores mm, _format_klitor divides by 10 to get cm; but here show mm
-            return bot.reply_to(
-                message,
-                f"{name}, шалунишка ты мой, думал не замечу? Ты уже играл сегодня и твой клитор сейчас нехуйная валына, целых {current} мм 😳🍑"
-            )
-        delta = weighted_random()       # delta in integer mm
-        update_stat(chat, user, "klitor", delta)
-        update_date(chat, user, "last_klitor")
-        data = ensure_user(chat, user)
-        new_size = data[str(chat)][str(user.id)]["klitor"]
-        return bot.reply_to(
-            message,
-            f"{name}, твой клитор вырос на {delta:+d} мм, теперь он {new_size} мм 😳🍑"
+        grow = weighted_random()
+        user["mm"] = max(0, user["mm"] + grow)
+        user["date"] = today
+
+        d[str(uid)] = user
+        save_data(d)
+
+        bot.reply_to(message, f"📈 Рост клитора +{grow} мм → {mm_to_cm(user['mm'])} см")
+        return
+
+    if text.startswith("/boostk"):
+        price = load_price()
+        uid = message.from_user.id
+
+        if price <= 0:
+            bot.reply_to(message, "Буст бесплатный. Жми /klitor")
+            return
+
+        bot.send_invoice(
+            chat_id=message.chat.id,
+            title="Boost Klitor",
+            description="Увеличение размера клитора",
+            invoice_payload=f"klitor:{uid}",
+            provider_token=PROVIDER_TOKEN,
+            currency="XTR",
+            prices=[LabeledPrice("Boost", price)]
         )
-
-    # ---- платный boost /boostk <amount_mm> ----
-    if cmd == "/boostk":
-        parts = text.split()
-        if len(parts) < 2:
-            return bot.reply_to(message, "Использование: /boostk <положительное число (мм)>")
-        try:
-            boost = int(parts[1])
-            if boost <= 0:
-                raise ValueError
-        except:
-            return bot.reply_to(message, "Укажи корректное положительное целое число (мм).")
-        price_per_unit = get_price()
-        total_price = max(1, int(price_per_unit * boost))
-        prices = [LabeledPrice(label=f"Boost x{boost} мм", amount=total_price)]
-        payload = f"boost_klitor:{chat}:{user.id}:{boost}"
-        try:
-            bot.send_invoice(
-                message.chat.id,
-                title=f"Boost клитора +{boost} мм",
-                description=f"Увеличение клитора на {boost} мм",
-                invoice_payload=payload,
-                provider_token=PROVIDER_TOKEN,
-                currency="XTR",
-                prices=prices,
-                start_parameter="boost_klitor"
-            )
-        except Exception as e:
-            return bot.reply_to(message, f"❌ Ошибка создания счёта: {e}")
