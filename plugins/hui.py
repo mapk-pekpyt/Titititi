@@ -7,32 +7,32 @@ def handle(bot, message):
     chat = message.chat.id
     data = ensure_user(chat, user)
 
-    if message.text.startswith("/hui"):
-        if was_today(chat, user, "last_hui"):
-            current = data[str(chat)][str(user.id)]["hui"]
+    if message.text.startswith("/klitor"):
+        if was_today(chat, user, "last_klitor"):
+            current = data[str(chat)][str(user.id)]["klitor"]
             return bot.reply_to(
                 message,
                 f"{get_name(user)}, шалунишка ты мой, думал не замечу? "
-                f"Ты уже играл сегодня и твой хуй сейчас {current} размера 😳🍆"
+                f"Ты уже играл сегодня и твой клитор сейчас {current:.1f} мм 😳🍑"
             )
 
-        delta = weighted_random()
-        update_stat(chat, user, "hui", delta)
-        update_date(chat, user, "last_hui")
-        new_size = data[str(chat)][str(user.id)]["hui"]
+        delta = weighted_random() / 10  # клитор в мм, дробное
+        update_stat(chat, user, "klitor", delta)
+        update_date(chat, user, "last_klitor")
+        new_size = data[str(chat)][str(user.id)]["klitor"]
         return bot.reply_to(
             message,
-            f"{get_name(user)}, твой хуй вырос на {delta:+}, "
-            f"теперь он {new_size} размера 😳🍆"
+            f"{get_name(user)}, твой клитор вырос на {delta:+.1f} мм, "
+            f"теперь он {new_size:.1f} мм 😳🍑"
         )
 
-    if message.text.startswith("/boosth"):
+    if message.text.startswith("/boostk"):
         price = get_price()
         parts = message.text.split()
         if len(parts) < 2:
-            return bot.reply_to(message, f"Укажи количество для буста: /boosth 5 (цена {price}⭐)")
+            return bot.reply_to(message, f"Укажи количество для буста: /boostk 5 (цена {price}⭐)")
         try:
-            boost = int(parts[1])
+            boost = float(parts[1])
             if boost <= 0:
                 raise ValueError
         except:
@@ -41,9 +41,9 @@ def handle(bot, message):
         total = price * boost
         payer_name = get_name(user)
         markup = InlineKeyboardMarkup()
-        cb = f"payboost:hui:{user.id}:{boost}"
+        cb = f"payboost:klitor:{user.id}:{boost}"
         markup.add(InlineKeyboardButton(f"💫 Оплатить {total} ⭐", callback_data=cb))
         bot.send_message(chat,
-            f"{payer_name} хочет увеличить хуй на {boost}. Цена: {total} ⭐",
+            f"{payer_name} хочет увеличить клитор на {boost:.1f} мм. Цена: {total} ⭐",
             reply_markup=markup
         )
