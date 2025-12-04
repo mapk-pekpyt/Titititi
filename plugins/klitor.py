@@ -1,49 +1,73 @@
-# plugins/klitor.py
-from plugins.common import weighted_random, get_name
-from plugins.top_plugin import ensure_user, update_date, was_today
-from plugins.bust_price import load_price, save_price
+from plugins.common import get_name
+from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
+from plugins.bust_price import price_data
+import random
+
+def weighted_mm():
+    # 0.1 - 1.0 мм
+    return round(random.uniform(0.1, 1.0), 1)
 
 def handle(bot, message):
     user = message.from_user
-    chat = message.chat.id
     name = get_name(user)
-
+    chat = message.chat.id
     data = ensure_user(chat, user)
-    user_data = data[str(chat)].get(str(user.id))
-    if user_data is None:
-        user_data = {"sisi":0,"hui":0,"klit":0,"stars":0}
-        data[str(chat)][str(user.id)] = user_data
 
-    if was_today(chat, user, "last_klit"):
-        cur = user_data.get("klit",0)
-        if cur < 0:
-            user_data["klit"] = 0
-            cur = 0
-        return bot.reply_to(message, f"{name}, шалунишка — сегодня уже играл. Клитор: {cur} мм 💦")
+    if was_today(chat, user, "last_klitor"):
+        current = data[str(chat)][str(user.id)]["klitor"]
+        return bot.reply_to(
+            message,
+            f"{name}, моя сладкая шалунья, ты уже играла сегодня… "
+            f"Твой клитор сейчас {current:.1f} мм 😳💦"
+        )
 
-    delta = weighted_random()
-    old = user_data.get("klit",0)
-    new = old + delta
-    if new < 0:
-        delta = -old
-        new = 0
-    user_data["klit"] = new
-    update_date(chat, user, "last_klit")
-    bot.reply_to(message, f"{name}, твой клитор изменился на {delta:+} мм, теперь {new} мм 💦")
+    delta = weighted_mm()
 
-def handle_bustk(bot, message):
+    update_stat(chat, user, "klitor", delta)
+    update_date(chat, user, "last_klitor")
+
+    new_size = data[str(chat)][str(user.id)]["klitor"]
+
+    bot.reply_to(
+        message,
+        f"{name}, твой клитор вырос на +{delta:.1f}, теперь он {new_size:.1f} мм 😳💦"
+    )
+
+
+def handle_bust(bot, message):
+    chat = message.chat.id
     user = message.from_user
-    chat = message.chat.id
     name = get_name(user)
-    data = ensure_user(chat, user)
-    user_data = data[str(chat)].get(str(user.id))
-    if user_data is None:
-        user_data = {"sisi":0,"hui":0,"klit":0,"stars":0}
-        data[str(chat)][str(user.id)] = user_data
 
-    price = load_price()
-    if user_data.get("stars",0) < price:
-        return bot.reply_to(message, f"{name}, недостаточно ⭐ (нужно {price})")
-    user_data["stars"] -= price
-    user_data["klit"] = user_data.get("klit",0) + 1
-    bot.reply_to(message, f"{name}, клитор увеличен — теперь {user_data['klit']} мм 💦")
+    args = message.text.split()
+    if len(args) < 2:
+        return bot.reply_to(message, "Укажи, на сколько увеличить. Например:\n/bustk 0.5")
+
+    try:
+        amount = float(args[1])
+    except:
+        return bot.reply_to(message, "Введи число.")
+
+    if amount <= 0:
+        return bot.reply_to(message, "Только положительное число!")
+
+    price = price_data.get("bust_price", 50)
+
+    bot.send_invoice(
+        chat_id=chat,
+        title="Буст клитора",
+        description=f"+{amount} мм к размеру",
+        payload=f"bust_klit|{amount}",
+        provider_token=None,
+        currency="XTR",
+        prices=[{"label": "Boost", "amount": int(price)}],
+        start_parameter="boost-klit"
+    )
+
+
+def boost_success(chat, user, amount):
+    data = ensure_user(chat, user)
+    if amount < 0:
+        amount = abs(amount)
+
+    data[str(chat)][str(user.id)]["klitor"] += amount
