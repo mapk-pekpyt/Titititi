@@ -16,7 +16,14 @@ def load():
         return {}
     try:
         with open(FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # исправляем старые данные, если users не dict
+            for chat_id in data:
+                if not isinstance(data[chat_id].get("users"), dict):
+                    data[chat_id]["users"] = {}
+                if "total" not in data[chat_id]:
+                    data[chat_id]["total"] = 0
+            return data
     except:
         return {}
 
@@ -30,7 +37,7 @@ def ensure_chat(data, chat_id):
     else:
         if "total" not in data[chat_id]:
             data[chat_id]["total"] = 0
-        if "users" not in data[chat_id]:
+        if not isinstance(data[chat_id].get("users"), dict):
             data[chat_id]["users"] = {}
 
 # ------------------ ОБРАБОТКА УСПЕШНОЙ ОПЛАТЫ ------------------
@@ -46,18 +53,19 @@ def handle_successful(bot, message):
     
     ensure_chat(data, chat_id)
     
-    # Берём сумму из успешной оплаты (в smallest units, обычно cents)
+    # Берём сумму из успешной оплаты (в smallest units)
     try:
         stars = getattr(message.successful_payment, "total_amount", 0)
     except:
         stars = 0
 
     if stars <= 0:
-        return  # не учитываем 0
+        return
 
     # Добавляем в банк и пользователю
     data[chat_id]["total"] += stars
-    data[chat_id]["users"].setdefault(user_id, 0)
+    if user_id not in data[chat_id]["users"]:
+        data[chat_id]["users"][user_id] = 0
     data[chat_id]["users"][user_id] += stars
 
     save(data)
@@ -73,11 +81,13 @@ def send_gift(bot, chat_id, data, forced=False):
     Выбираем случайного донатившего и отправляем подарок.
     Если forced=True, игнорируем минимальную сумму.
     """
-    users = list(data[chat_id]["users"].items())
+    ensure_chat(data, chat_id)
+    users = data[chat_id]["users"]
     if not users:
         return
 
-    winner_id, _ = random.choice(users)
+    # выбор победителя
+    winner_id = random.choice(list(users.keys()))
     winner_name = get_user_name(bot, int(chat_id), int(winner_id))
 
     # Отправка сообщения о подарке (50 Stars Gift)
