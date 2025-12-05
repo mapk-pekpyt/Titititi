@@ -23,13 +23,8 @@ def save(data):
 
 def ensure_chat(data, chat_id):
     if chat_id not in data:
-        data[chat_id] = {
-            "total": 0,
-            "users": {},
-            "lotoprice": 100
-        }
+        data[chat_id] = {"total": 0, "users": {}, "lotoprice": 100}
     else:
-        # Проверяем и создаём недостающие ключи
         if "total" not in data[chat_id]:
             data[chat_id]["total"] = 0
         if "users" not in data[chat_id]:
@@ -39,15 +34,24 @@ def ensure_chat(data, chat_id):
 
 # ------------------ ОБРАБОТКА ОПЛАТ ------------------
 
-def handle_successful(bot, message, stars=None):
-    """Добавляем все успешные платежи в банк лото"""
+def handle_successful(bot, message):
+    """
+    Добавляет любые успешные оплаты в банк лото.
+    Всегда вызывается из main.py.
+    """
     data = load()
     chat_id = str(message.chat.id)
     user_id = str(message.from_user.id)
-    stars = stars or getattr(message.successful_payment, "total_amount", 0)  # в мин. валютах
-
+    
     ensure_chat(data, chat_id)
+    
+    # Берём звезды из успешной оплаты
+    try:
+        stars = getattr(message.successful_payment, "total_amount", 0)
+    except:
+        stars = 0
 
+    # Добавляем пользователю и в общий банк чата
     data[chat_id]["total"] += stars
     data[chat_id]["users"].setdefault(user_id, 0)
     data[chat_id]["users"][user_id] += stars
@@ -71,16 +75,15 @@ def handle(bot, message):
     # ------------------ /lotoprice ------------------
     if cmd == "/lotoprice":
         parts = text.split()
-        # Показать текущий лото-прайс
         if len(parts) < 2:
             bot.reply_to(message, f"💰 Текущий лото-прайс: {data[chat_id]['lotoprice']} ⭐")
             return
-        # Изменить лото-прайс (только админы)
+
+        # Только админы могут менять
         try:
-            from telebot import apihelper
             admins = bot.get_chat_administrators(message.chat.id)
             admin_ids = [a.user.id for a in admins]
-        except apihelper.ApiException:
+        except:
             admin_ids = []
 
         if message.from_user.id not in admin_ids:
@@ -114,14 +117,13 @@ def handle(bot, message):
         winner_id, _ = random.choice(users)
         winner_name = get_user_name(bot, chat_id, int(winner_id))
 
-        reward = total // 2  # 50% отдаём победителю
+        reward = total // 2
         bot.send_message(message.chat.id, f"🎉 Поздравляем {winner_name}! Ты выиграл {reward} ⭐!")
 
         # Сбрасываем накопления
         data[chat_id]["total"] = 0
         data[chat_id]["users"] = {}
         save(data)
-        return
 
 # ------------------ ВСПОМОГАТЕЛЬНЫЕ ------------------
 
