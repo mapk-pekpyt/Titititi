@@ -44,4 +44,7 @@ TRIGGERS = {
     
     "/lotoprice": "loto",
     "/lotoprice@Sisititibot": "loto",
+    
+    "/gift": "loto",
+    "/gift@Sisititibot": "loto",
 }
