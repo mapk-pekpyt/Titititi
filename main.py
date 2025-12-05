@@ -25,7 +25,9 @@ def my_sizes(message):
     top_plugin.handle_my(bot, message)
 
 
+# ---------------------------------------------
 # ✅ ОБЯЗАТЕЛЬНО: обработчик pre-checkout для Stars
+# ---------------------------------------------
 @bot.pre_checkout_query_handler(func=lambda q: True)
 def checkout(pre_checkout_query):
     try:
@@ -34,13 +36,22 @@ def checkout(pre_checkout_query):
         print("❌ Ошибка pre-checkout:", e)
 
 
-# 🔥 Обработчик успешной оплаты
+# -----------------------------------------------------
+# 🔥 ГЛАВНЫЙ ОБЩИЙ ОБРАБОТЧИК УСПЕШНОЙ ОПЛАТЫ ДЛЯ ВСЕХ
+# -----------------------------------------------------
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
-    mut.handle_successful(bot, message)
+    for name, plugin in PLUGINS.items():
+        try:
+            if hasattr(plugin, "handle_successful"):
+                plugin.handle_successful(bot, message)
+        except Exception as e:
+            print(f"❌ Ошибка в обработке оплаты у {name}: {e}")
 
 
+# ---------------------------------------------
 # Общий обработчик всех плагинов
+# ---------------------------------------------
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     text = message.text
