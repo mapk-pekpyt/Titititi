@@ -2,12 +2,11 @@
 import os
 import json
 import random
-from telebot.types import User
 
 FILE = "data/loto.json"
 os.makedirs("data", exist_ok=True)
 
-# ------------------ ФУНКЦИИ ДЛЯ ХРАНЕНИЯ ------------------
+# ------------------ ФУНКЦИИ ------------------
 
 def load():
     if not os.path.exists(FILE):
@@ -22,22 +21,30 @@ def save(data):
     with open(FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# ------------------ ИНИЦИАЛИЗАЦИЯ ЧАТА ------------------
-
 def ensure_chat(data, chat_id):
     if chat_id not in data:
         data[chat_id] = {
-            "total": 0,       # накопленные звёзды
-            "users": {},      # донатившие пользователи
-            "lotoprice": 100  # дефолтная цель
+            "total": 0,
+            "users": {},
+            "lotoprice": 100
         }
+    else:
+        # Проверяем и создаём недостающие ключи
+        if "total" not in data[chat_id]:
+            data[chat_id]["total"] = 0
+        if "users" not in data[chat_id]:
+            data[chat_id]["users"] = {}
+        if "lotoprice" not in data[chat_id]:
+            data[chat_id]["lotoprice"] = 100
 
-# ------------------ ДОБАВЛЕНИЕ ЗВЁЗД В БАНК ------------------
+# ------------------ ОБРАБОТКА ОПЛАТ ------------------
 
-def handle_payment(bot, message, stars):
+def handle_successful(bot, message, stars=None):
+    """Добавляем все успешные платежи в банк лото"""
     data = load()
     chat_id = str(message.chat.id)
     user_id = str(message.from_user.id)
+    stars = stars or getattr(message.successful_payment, "total_amount", 0)  # в мин. валютах
 
     ensure_chat(data, chat_id)
 
@@ -54,22 +61,30 @@ def handle(bot, message):
     if not text:
         return
 
-    cmd_raw = text.split()[0].lower()
-    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
     chat_id = str(message.chat.id)
-
     data = load()
     ensure_chat(data, chat_id)
 
+    cmd_raw = text.split()[0].lower()
+    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+
     # ------------------ /lotoprice ------------------
     if cmd == "/lotoprice":
-        if message.from_user.id not in get_chat_admin_ids(bot, message.chat.id):
-            bot.reply_to(message, "⛔ Только админы могут менять цену лото.")
-            return
-
         parts = text.split()
+        # Показать текущий лото-прайс
         if len(parts) < 2:
             bot.reply_to(message, f"💰 Текущий лото-прайс: {data[chat_id]['lotoprice']} ⭐")
+            return
+        # Изменить лото-прайс (только админы)
+        try:
+            from telebot import apihelper
+            admins = bot.get_chat_administrators(message.chat.id)
+            admin_ids = [a.user.id for a in admins]
+        except apihelper.ApiException:
+            admin_ids = []
+
+        if message.from_user.id not in admin_ids:
+            bot.reply_to(message, "⛔ Только админы могут менять цену лото.")
             return
 
         try:
@@ -90,30 +105,25 @@ def handle(bot, message):
             bot.reply_to(message, f"🕐 Ещё не набрано {price} ⭐, собрано {total} ⭐")
             return
 
-        # выбираем победителя
+        # Выбираем победителя
         users = list(data[chat_id]["users"].items())
-        total_stars = sum(s for _, s in users)
+        if not users:
+            bot.reply_to(message, "⚠️ Нет донативших пользователей.")
+            return
 
         winner_id, _ = random.choice(users)
         winner_name = get_user_name(bot, chat_id, int(winner_id))
 
-        reward = total_stars // 2  # 50% отдаём победителю
+        reward = total // 2  # 50% отдаём победителю
         bot.send_message(message.chat.id, f"🎉 Поздравляем {winner_name}! Ты выиграл {reward} ⭐!")
 
-        # остаток остаётся в боте, чистим накопления
+        # Сбрасываем накопления
         data[chat_id]["total"] = 0
         data[chat_id]["users"] = {}
         save(data)
         return
 
 # ------------------ ВСПОМОГАТЕЛЬНЫЕ ------------------
-
-def get_chat_admin_ids(bot, chat_id):
-    try:
-        admins = bot.get_chat_administrators(chat_id)
-        return [a.user.id for a in admins]
-    except:
-        return []
 
 def get_user_name(bot, chat_id, user_id):
     try:
