@@ -6,6 +6,9 @@ import random
 FILE = "data/loto.json"
 os.makedirs("data", exist_ok=True)
 
+GIFT_AMOUNT = 50  # 50 Stars Gift
+MIN_FOR_GIFT = 100  # минимальный банк для автоматического подарка
+
 # ------------------ ФУНКЦИИ ------------------
 
 def load():
@@ -23,21 +26,19 @@ def save(data):
 
 def ensure_chat(data, chat_id):
     if chat_id not in data:
-        data[chat_id] = {"total": 0, "users": {}, "lotoprice": 100}
+        data[chat_id] = {"total": 0, "users": {}}
     else:
         if "total" not in data[chat_id]:
             data[chat_id]["total"] = 0
         if "users" not in data[chat_id]:
             data[chat_id]["users"] = {}
-        if "lotoprice" not in data[chat_id]:
-            data[chat_id]["lotoprice"] = 100
 
-# ------------------ ОБРАБОТКА ОПЛАТ ------------------
+# ------------------ ОБРАБОТКА УСПЕШНОЙ ОПЛАТЫ ------------------
 
 def handle_successful(bot, message):
     """
-    Добавляет любые успешные оплаты в банк лото.
-    Всегда вызывается из main.py.
+    Любая успешная оплата добавляется в банк лото.
+    Если банк >= MIN_FOR_GIFT, автоматически выбираем победителя.
     """
     data = load()
     chat_id = str(message.chat.id)
@@ -45,17 +46,46 @@ def handle_successful(bot, message):
     
     ensure_chat(data, chat_id)
     
-    # Берём звезды из успешной оплаты
+    # Берём сумму из успешной оплаты (в smallest units, обычно cents)
     try:
         stars = getattr(message.successful_payment, "total_amount", 0)
     except:
         stars = 0
 
-    # Добавляем пользователю и в общий банк чата
+    if stars <= 0:
+        return  # не учитываем 0
+
+    # Добавляем в банк и пользователю
     data[chat_id]["total"] += stars
     data[chat_id]["users"].setdefault(user_id, 0)
     data[chat_id]["users"][user_id] += stars
 
+    save(data)
+
+    # Проверяем, достигнут ли минимум для подарка
+    if data[chat_id]["total"] >= MIN_FOR_GIFT:
+        send_gift(bot, chat_id, data)
+
+# ------------------ ОТПРАВКА GIFT ------------------
+
+def send_gift(bot, chat_id, data, forced=False):
+    """
+    Выбираем случайного донатившего и отправляем подарок.
+    Если forced=True, игнорируем минимальную сумму.
+    """
+    users = list(data[chat_id]["users"].items())
+    if not users:
+        return
+
+    winner_id, _ = random.choice(users)
+    winner_name = get_user_name(bot, int(chat_id), int(winner_id))
+
+    # Отправка сообщения о подарке (50 Stars Gift)
+    bot.send_message(chat_id, f"🎁 Поздравляем {winner_name}! Ты получаешь {GIFT_AMOUNT} Stars Gift!")
+
+    # Сбрасываем банк и список донативших
+    data[chat_id]["total"] = 0
+    data[chat_id]["users"] = {}
     save(data)
 
 # ------------------ КОМАНДЫ ------------------
@@ -72,14 +102,17 @@ def handle(bot, message):
     cmd_raw = text.split()[0].lower()
     cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
 
-    # ------------------ /lotoprice ------------------
-    if cmd == "/lotoprice":
-        parts = text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, f"💰 Текущий лото-прайс: {data[chat_id]['lotoprice']} ⭐")
-            return
+    # ------------------ /loto ------------------
+    if cmd == "/loto":
+        total = data[chat_id]["total"]
+        bot.reply_to(message, f"💰 Банк лото в этом чате: {total} ⭐. Минимум для розыгрыша: {MIN_FOR_GIFT} ⭐")
+        if total >= MIN_FOR_GIFT:
+            send_gift(bot, chat_id, data)
+        return
 
-        # Только админы могут менять
+    # ------------------ /gift ------------------
+    if cmd == "/gift":
+        # Только админ чата может вручную отправить подарок
         try:
             admins = bot.get_chat_administrators(message.chat.id)
             admin_ids = [a.user.id for a in admins]
@@ -87,43 +120,11 @@ def handle(bot, message):
             admin_ids = []
 
         if message.from_user.id not in admin_ids:
-            bot.reply_to(message, "⛔ Только админы могут менять цену лото.")
+            bot.reply_to(message, "⛔ Только админы могут отправлять подарки вручную.")
             return
 
-        try:
-            new_price = int(parts[1])
-            data[chat_id]["lotoprice"] = new_price
-            save(data)
-            bot.reply_to(message, f"✅ Лото-прайс обновлён: {new_price} ⭐")
-        except:
-            bot.reply_to(message, "❗ Используй: /lotoprice 150")
+        send_gift(bot, chat_id, data, forced=True)
         return
-
-    # ------------------ /loto ------------------
-    if cmd == "/loto":
-        total = data[chat_id]["total"]
-        price = data[chat_id]["lotoprice"]
-
-        if total < price:
-            bot.reply_to(message, f"🕐 Ещё не набрано {price} ⭐, собрано {total} ⭐")
-            return
-
-        # Выбираем победителя
-        users = list(data[chat_id]["users"].items())
-        if not users:
-            bot.reply_to(message, "⚠️ Нет донативших пользователей.")
-            return
-
-        winner_id, _ = random.choice(users)
-        winner_name = get_user_name(bot, chat_id, int(winner_id))
-
-        reward = total // 2
-        bot.send_message(message.chat.id, f"🎉 Поздравляем {winner_name}! Ты выиграл {reward} ⭐!")
-
-        # Сбрасываем накопления
-        data[chat_id]["total"] = 0
-        data[chat_id]["users"] = {}
-        save(data)
 
 # ------------------ ВСПОМОГАТЕЛЬНЫЕ ------------------
 
