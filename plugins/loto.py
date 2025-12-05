@@ -22,6 +22,16 @@ def save(data):
     with open(FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# ------------------ ИНИЦИАЛИЗАЦИЯ ЧАТА ------------------
+
+def ensure_chat(data, chat_id):
+    if chat_id not in data:
+        data[chat_id] = {
+            "total": 0,       # накопленные звёзды
+            "users": {},      # донатившие пользователи
+            "lotoprice": 100  # дефолтная цель
+        }
+
 # ------------------ ДОБАВЛЕНИЕ ЗВЁЗД В БАНК ------------------
 
 def handle_payment(bot, message, stars):
@@ -29,12 +39,7 @@ def handle_payment(bot, message, stars):
     chat_id = str(message.chat.id)
     user_id = str(message.from_user.id)
 
-    if chat_id not in data:
-        data[chat_id] = {
-            "total": 0,     # накопленные звёзды
-            "users": {},    # донатившие пользователи
-            "lotoprice": 100  # дефолтная цель
-        }
+    ensure_chat(data, chat_id)
 
     data[chat_id]["total"] += stars
     data[chat_id]["users"].setdefault(user_id, 0)
@@ -54,8 +59,7 @@ def handle(bot, message):
     chat_id = str(message.chat.id)
 
     data = load()
-    if chat_id not in data:
-        data[chat_id] = {"total":0, "users":{}, "lotoprice": 100}
+    ensure_chat(data, chat_id)
 
     # ------------------ /lotoprice ------------------
     if cmd == "/lotoprice":
