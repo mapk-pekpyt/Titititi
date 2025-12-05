@@ -40,8 +40,8 @@ TRIGGERS = {
     
     #loto
     "/loto": "loto",
-    "/loto@Sisititibot": "loto"
+    "/loto@Sisititibot": "loto",
     
     "/lotoprice": "loto",
-    "/lotoprice@Sisititibot": "loto"
+    "/lotoprice@Sisititibot": "loto",
 }
