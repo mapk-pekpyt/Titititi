@@ -1,89 +1,121 @@
+# plugins/klitor.py
+import os
 from telebot.types import LabeledPrice
 from plugins.common import weighted_random, get_name
-from plugins.top_plugin import ensure_user, update_stat, update_date, was_today
-from .bust_price import load_price
+from plugins import top_plugin
+from plugins.bust_price import load_price
 
-def _format_klitor(mm: int):
-    return f"{mm / 10:.1f}"
+PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
+
+def _format_klitor(mm: int) -> str:
+    # mm stored; display cm with one decimal: mm/10 -> 1.1 см
+    return f"{mm/10:.1f}"
 
 def handle(bot, message):
+    text = (message.text or "").strip()
+    cmd_raw = text.split()[0].lower() if text else ""
+    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+
     user = message.from_user
     chat = message.chat.id
     name = get_name(user)
-    data = ensure_user(chat, user)
 
-    text = (message.text or "").strip().lower()
-    cmd_raw = text.split()[0]
-    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+    top_plugin.ensure_user(chat, user)
 
-    # --------- /klitor (ежедневная игра) ---------
+    # ---------- ежедневная игра /klitor ----------
     if cmd == "/klitor":
-        if was_today(chat, user, "last_klitor"):
-            current = data[str(chat)][str(user.id)]["klitor"]
+        if top_plugin.was_today(chat, user, "last_klitor"):
+            data = top_plugin.load()
+            current = data.get(str(chat), {}).get(str(user.id), {}).get("klitor", 0)
             return bot.reply_to(
                 message,
                 f"{name}, шалунишка ты мой, думал не замечу? "
-                f"Ты уже играл сегодня и твой клитор сейчас {_format_klitor(current)} см 🍑"
+                f"Ты уже играл сегодня и твоя валына сейчас {_format_klitor(current)} см 😳 🍑"
             )
-        delta = max(weighted_random(),0)
-        update_stat(chat, user, "klitor", delta)
-        update_date(chat, user, "last_klitor")
-        new_size = data[str(chat)][str(user.id)]["klitor"]
+
+        delta = weighted_random()
+        if delta < 0:
+            delta = 0
+
+        # delta is in 'units' where 1 unit == 1 mm (we store mm)
+        top_plugin.update_stat(chat, user, "klitor", delta)
+        top_plugin.update_date(chat, user, "last_klitor")
+
+        data = top_plugin.load()
+        new_mm = data[str(chat)][str(user.id)]["klitor"]
+
         bot.reply_to(
             message,
-            f"{name}, твой клитор вырос на +{delta/10:.1f} см, теперь {_format_klitor(new_size)} см 🍑"
+            f"{name}, твой клитор вырос на +{delta} мм, теперь у тебя валына целых {_format_klitor(new_mm)} см 😳🍑"
         )
         return
 
-    # --------- /boostk (платный буст) ---------
+    # ---------- платный буст /boostk [n] ----------
     if cmd == "/boostk":
         parts = text.split()
-        delta = 1
+        n = 1
         if len(parts) >= 2:
             try:
-                delta = max(int(parts[1]),1)
+                n = max(int(parts[1]), 1)
             except:
-                delta = 1
+                n = 1
+
         price = load_price()
-        total = price * delta
+        total = price * n
+
         if price <= 0:
-            update_stat(chat, user, "klitor", delta)
-            update_date(chat, user, "last_klitor")
-            new_size = data[str(chat)][str(user.id)]["klitor"]
-            bot.reply_to(message, f"{name}, твой клитор вырос на +{delta/10:.1f} см, теперь {_format_klitor(new_size)} см 🍑")
-            return
+            top_plugin.update_stat(chat, user, "klitor", n)
+            top_plugin.update_date(chat, user, "last_klitor")
+            data = top_plugin.load()
+            new_mm = data[str(chat)][str(user.id)]["klitor"]
+            return bot.reply_to(
+                message,
+                f"{name}, твой клитор вырос на +{n} мм, теперь у тебя валына целых {_format_klitor(new_mm)} см 😳🍑"
+            )
+
         try:
             prices = [LabeledPrice(label="Boost Klitor", amount=total)]
             bot.send_invoice(
                 chat_id=chat,
                 title="Буст клитора",
-                description=f"{name} хочет увеличить клитор на +{delta/10:.1f} см",
-                invoice_payload=f"boost:{chat}:{user.id}:klitor:{delta}",
-                provider_token="5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA",
+                description=f"{name} хочет увеличить клитор на +{n} мм",
+                invoice_payload=f"boost:{chat}:{user.id}:klitor:{n}",
+                provider_token=PROVIDER_TOKEN,
                 currency="XTR",
                 prices=prices
             )
         except Exception as e:
             bot.reply_to(message, f"❌ Ошибка оплаты: {e}")
 
-def handle_successful_payment(bot, message):
+def handle_successful(bot, message):
     if not hasattr(message, "successful_payment") or not message.successful_payment:
         return
     payload = getattr(message.successful_payment, "invoice_payload", "") or \
               getattr(message.successful_payment, "payload", "")
     if not payload.startswith("boost:"):
         return
+
+    parts = payload.split(":")
+    if len(parts) != 5:
+        return
+    _, chat_s, payer_s, stat, n_s = parts
+    if stat != "klitor":
+        return
+
     try:
-        _, chat_id_s, payer_id_s, stat, delta_s = payload.split(":")
-        chat_id = int(chat_id_s)
-        payer_id = int(payer_id_s)
-        delta = int(delta_s)
+        chat_id = int(chat_s)
+        payer_id = int(payer_s)
+        n = int(n_s)
     except:
         return
-    from plugins.top_plugin import ensure_user, update_stat, update_date
-    chat_data = ensure_user(chat_id, message.from_user)
-    update_stat(chat_id, message.from_user, stat, delta)
-    update_date(chat_id, message.from_user, f"last_{stat}")
-    new_size = chat_data[str(chat_id)][str(payer_id)][stat]
-    if stat == "klitor":
-        bot.send_message(chat_id, f"{get_name(message.from_user)}, твой клитор вырос на +{delta/10:.1f} см, теперь {_format_klitor(new_size)} см 🍑")
+
+    payer = message.from_user
+    top_plugin.ensure_user(chat_id, payer)
+
+    top_plugin.update_stat(chat_id, payer, "klitor", n)
+    top_plugin.update_date(chat_id, payer, "last_klitor")
+
+    data = top_plugin.load()
+    new_mm = data[str(chat_id)][str(payer.id)]["klitor"]
+
+    bot.send_message(chat_id, f"{get_name(payer)}, твой клитор вырос на +{n} мм, теперь у тебя валына целых {_format_klitor(new_mm)} см 😳🍑")
