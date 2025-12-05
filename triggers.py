@@ -37,4 +37,9 @@ TRIGGERS = {
     # ==== KTO ====
     "/kto": "kto",
     "/kto@Sisititibot": "kto",
+    
+    "/loto": "loto",
+    "/loto@Sisititibot": "loto"
+    "/lotoprice": "loto",
+    "/lotoprice@Sisititibot": "loto"
 }
