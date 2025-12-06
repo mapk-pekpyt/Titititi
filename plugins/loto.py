@@ -1,69 +1,70 @@
-from telebot import TeleBot, types
+from telebot import types
 import random
 
-bot = TeleBot("TOKEN")
-
-# банк по чатам
 bank = {}
-# цена лото
-lotoprice = {}
-# донатеры по чатам
 donors = {}
+lotoprice = {}
 
-### УСТАНОВКА ПРАЙСА /lotoprice
-@bot.message_handler(commands=['lotoprice'])
-def set_price(message):
-    chat_id = message.chat.id
-    args = message.text.split()
+def init(bot):
 
-    if len(args) < 2 or not args[1].isdigit():
-        bot.reply_to(message, "Укажи сумму: /lotoprice 100")
-        return
+    # /lotoprice
+    @bot.message_handler(commands=['lotoprice'])
+    def set_price(message):
+        chat_id = message.chat.id
+        args = message.text.split()
 
-    price = int(args[1])
-    lotoprice[chat_id] = price
-    bot.reply_to(message, f"🎯 Лото прайс установлен: {price} ⭐")
+        if len(args) < 2 or not args[1].isdigit():
+            bot.reply_to(message, "Укажи цену: /lotoprice 100")
+            return
 
-    if chat_id not in bank:
-        bank[chat_id] = 0
-    if chat_id not in donors:
-        donors[chat_id] = {}
+        price = int(args[1])
+        lotoprice[chat_id] = price
 
-### УЧЁТ ОПЛАТЫ ЧЕРЕЗ КОМАНДУ BOOSTS
-@bot.message_handler(commands=['boosts'])
-def boosts(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    args = message.text.split()
+        if chat_id not in bank:
+            bank[chat_id] = 0
+        if chat_id not in donors:
+            donors[chat_id] = {}
 
-    # если /boosts без числа → 1
-    amount = 1
+        bot.reply_to(message, f"🎯 Порог лото: {price} ⭐")
 
-    if len(args) > 1 and args[1].isdigit():
-        amount = int(args[1])
+    # /boosts
+    @bot.message_handler(commands=['boosts'])
+    def boosts_handler(message):
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        args = message.text.split()
 
-    add_to_bank(chat_id, user_id, amount)
-    bot.reply_to(message, f"🔥 Boost добавлен: +{amount} ⭐")
+        amount = 1
+        if len(args) > 1 and args[1].isdigit():
+            amount = int(args[1])
 
-### УЧЁТ МУТА: 2 звезды за минуту
-@bot.message_handler(commands=['mut'])
-def mute_handler(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    args = message.text.split()
+        add_to_bank(bot, chat_id, user_id, amount)
+        bot.reply_to(message, f"🔥 Boost +{amount} ⭐")
 
-    if len(args) < 2 or not args[1].isdigit():
-        bot.reply_to(message, "Используй: /mut 5  (5 минут)")
-        return
+    # /mut
+    @bot.message_handler(commands=['mut'])
+    def mute_handler(message):
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        args = message.text.split()
 
-    minutes = int(args[1])
-    amount = minutes * 2
+        if len(args) < 2 or not args[1].isdigit():
+            bot.reply_to(message, "Используй: /mut 5")
+            return
 
-    add_to_bank(chat_id, user_id, amount)
-    bot.reply_to(message, f"🔇 Мут: {minutes} мин → +{amount} ⭐")
+        minutes = int(args[1])
+        amount = minutes * 2
 
-### ДОБАВЛЕНИЕ В БАНК
-def add_to_bank(chat_id, user_id, amount):
+        add_to_bank(bot, chat_id, user_id, amount)
+        bot.reply_to(message, f"🔇 Мут {minutes} мин → +{amount} ⭐")
+
+    # /gift
+    @bot.message_handler(commands=['gift'])
+    def manual_gift(message):
+        run_loto(bot, message.chat.id)
+
+
+def add_to_bank(bot, chat_id, user_id, amount):
     if chat_id not in bank:
         bank[chat_id] = 0
     if chat_id not in donors:
@@ -74,56 +75,26 @@ def add_to_bank(chat_id, user_id, amount):
     donors[chat_id][user_id] += amount
     bank[chat_id] += amount
 
-    check_loto(chat_id)
+    check_loto(bot, chat_id)
 
-### ПРОВЕРКА РОЗЫГРЫША
-def check_loto(chat_id):
-    if chat_id not in lotoprice:
+
+def check_loto(bot, chat_id):
+    if chat_id in lotoprice and bank[chat_id] >= lotoprice[chat_id]:
+        run_loto(bot, chat_id)
+
+
+def run_loto(bot, chat_id):
+    if chat_id not in donors or not donors[chat_id]:
         return
 
-    if bank[chat_id] >= lotoprice[chat_id]:
-        run_loto(chat_id)
-
-### РОЗЫГРЫШ
-def run_loto(chat_id):
     users = list(donors[chat_id].keys())
-
-    if not users:
-        return
-
     winner = random.choice(users)
 
-    # сбрасываем банк
     bank[chat_id] = 0
     donors[chat_id] = {}
 
     bot.send_message(
         chat_id,
-        f"🎉 *ЛОТО!* Победитель: [{winner}](tg://user?id={winner})\n"
-        f"Подарок: 🎁 50 Stars Gift",
+        f"🎉 ЛОТО!\nПобедитель: [{winner}](tg://user?id={winner})\n🎁 50 Stars Gift!",
         parse_mode="Markdown"
     )
-
-    # кнопка подарка
-    markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton("🎁 Подарить 50⭐", pay=True)
-    markup.add(btn)
-
-    bot.send_invoice(
-        chat_id,
-        title="50 Stars Gift",
-        description="Приз победителю лото",
-        provider_token="",
-        currency="XTR",
-        prices=[types.LabeledPrice("Gift", 50)],
-        invoice_payload="gift50",
-        reply_markup=markup
-    )
-
-### РУЧНАЯ КОМАНДА /gift
-@bot.message_handler(commands=['gift'])
-def manual_gift(message):
-    chat_id = message.chat.id
-    run_loto(chat_id)
-
-bot.polling()
