@@ -1,207 +1,187 @@
-import json
 import os
-from telebot.types import LabeledPrice
+import json
+import random
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-DATA_FILE = "data/loto.json"
+FILE = "/app/data/loto.json"
 
-# -------------------------------------------------------
-#  ЗАГРУЗКА / СОХРАНЕНИЕ
-# -------------------------------------------------------
+# ---------------------------------------------------
+#   СИСТЕМА ЧТЕНИЯ/СОЗДАНИЯ БАЗЫ
+# ---------------------------------------------------
 
 def load():
-    if not os.path.exists(DATA_FILE):
+    if not os.path.exists(FILE):
         return {}
     try:
-        with open(DATA_FILE, "r") as f:
+        with open(FILE, "r") as f:
             return json.load(f)
     except:
         return {}
 
 def save(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-# -------------------------------------------------------
-#  ИНИЦИАЛИЗАЦИЯ ДЛЯ ОТДЕЛЬНОГО ЧАТА
-# -------------------------------------------------------
+    os.makedirs(os.path.dirname(FILE), exist_ok=True)
+    with open(FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
 def ensure_chat(chat_id):
+    chat_id = str(chat_id)
     data = load()
-    if str(chat_id) not in data:
-        data[str(chat_id)] = {
-            "bank": 0,
-            "users": {}  # user_id: stars
-        }
-        save(data)
+
+    if chat_id not in data:
+        data[chat_id] = {}
+
+    if "bank" not in data[chat_id]:
+        data[chat_id]["bank"] = 0
+
+    if "users" not in data[chat_id] or not isinstance(data[chat_id]["users"], dict):
+        data[chat_id]["users"] = {}
+
+    if "lotoprice" not in data[chat_id]:
+        data[chat_id]["lotoprice"] = 100  # стандарт
+
+    save(data)
     return data
 
 
-# -------------------------------------------------------
-#  НАЧИСЛЕНИЕ СРЕДСТВ
-# -------------------------------------------------------
-
-def add_stars(chat_id, user_id, amount):
-    data = ensure_chat(chat_id)
-    chat_id = str(chat_id)
-    user_id = str(user_id)
-
-    if user_id not in data[chat_id]["users"]:
-        data[chat_id]["users"][user_id] = 0
-
-    data[chat_id]["users"][user_id] += amount
-    data[chat_id]["bank"] += amount
-
-    save(data)
-
-
-# -------------------------------------------------------
-#  ВЫГРЫШ ПРИ 100 ЗВЁЗДАХ
-# -------------------------------------------------------
-
-def try_payout(bot, chat_id):
-    data = load()
-    chat = str(chat_id)
-
-    if chat not in data:
-        return
-
-    if data[chat]["bank"] < 100:
-        return
-
-    users = data[chat]["users"]
-    if not users:
-        return
-
-    # выбираем случайного донатера
-    import random
-    winner = random.choice(list(users.keys()))
-    winner_id = int(winner)
-
-    # выдаём подарок
-    bot.send_message(chat_id, f"🎁 *Розыгрыш!* Победитель — <a href='tg://user?id={winner_id}'>этот красавчик</a>!\nБот дарит ему 50 ⭐!", parse_mode="HTML")
-
-    # отправка подарка
-    try:
-        bot.send_invoice(
-            winner_id,
-            title="Подарок 50 Stars",
-            description="Ваш выигрыш!",
-            provider_token="",
-            currency="XTR",
-            prices=[LabeledPrice("Подарок", 50)],
-            payload="loto_gift"
-        )
-    except:
-        pass
-
-    # обнуляем банк
-    data[chat]["bank"] = 0
-    data[chat]["users"] = {}
-    save(data)
-
-
-# -------------------------------------------------------
-#  РУЧНОЙ ПОДАРОК
-# -------------------------------------------------------
-
-def handle_gift_command(bot, message):
-    chat_id = message.chat.id
-
-    try:
-        bot.send_invoice(
-            chat_id,
-            title="Тестовый подарок 50⭐",
-            description="Ручная выдача",
-            provider_token="",
-            currency="XTR",
-            prices=[LabeledPrice("Подарок", 50)],
-            payload="manual_gift"
-        )
-    except Exception as e:
-        bot.reply_to(message, f"Ошибка отправки подарка: {e}")
-
-
-# -------------------------------------------------------
-#  ОБРАБОТКА УСПЕШНОЙ ОПЛАТЫ
-# -------------------------------------------------------
+# ---------------------------------------------------
+#  ОБРАБОТЧИК УСПЕШНЫХ ОПЛАТ (все покупки)
+# ---------------------------------------------------
 
 def handle_successful(bot, message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    amount = message.successful_payment.total_amount // 100  # stars
 
-    # Stars → total_amount всегда = звёздам
-    stars = message.successful_payment.total_amount
+    data = ensure_chat(chat_id)
+    chat = str(chat_id)
 
-    add_stars(chat_id, user_id, stars)
+    data[chat]["bank"] += amount
+
+    if str(user_id) not in data[chat]["users"]:
+        data[chat]["users"][str(user_id)] = 0
+
+    data[chat]["users"][str(user_id)] += amount
+
+    save(data)
 
     bot.send_message(
         user_id,
-        f"💫 Получено `{stars}` ⭐\nБанк: {load()[str(chat_id)]['bank']}/100 ⭐",
-        parse_mode="Markdown"
+        f"💫 Получено `{amount}` ⭐.\n"
+        f"Банк: {data[chat]['bank']}/{data[chat]['lotoprice']} ⭐."
     )
 
-    try_payout(bot, chat_id)
+    check_loto(bot, chat_id)
 
 
-# -------------------------------------------------------
-#  ЛОВИМ КОМАНДЫ boost/mut
-# -------------------------------------------------------
 
-def handle_message_based_payments(bot, message):
-    text = message.text.lower()
-    chat_id = message.chat.id
-    user_id = message.from_user.id
+# ---------------------------------------------------
+# СЧЁТЧИК ДЛЯ КОМАНД /boosts и /mute
+# ---------------------------------------------------
 
-    # /boosts (без числа)
-    if text.startswith("/boosts") and "@" not in text:
-        parts = text.split()
-        if len(parts) == 1:
-            amount = 1
-        else:
-            try:
-                amount = int(parts[1])
-            except:
-                amount = 1
+def register_manual_payment(bot, chat_id, user_id, stars):
+    data = ensure_chat(chat_id)
+    chat = str(chat_id)
 
-        add_stars(chat_id, user_id, amount)
-        try_payout(bot, chat_id)
-        return True
+    data[chat]["bank"] += stars
 
-    # мут → 2 * минуты
-    if text.startswith("мут ") or text.startswith("mut "):
-        parts = text.split()
-        try:
-            minutes = int(parts[1])
-        except:
-            minutes = 1
+    if str(user_id) not in data[chat]["users"]:
+        data[chat]["users"][str(user_id)] = 0
 
-        stars = minutes * 2
-        add_stars(chat_id, user_id, stars)
-        try_payout(bot, chat_id)
-        return True
+    data[chat]["users"][str(user_id)] += stars
 
-    return False
+    save(data)
+
+    check_loto(bot, chat_id)
 
 
-# -------------------------------------------------------
-#  ГЛАВНЫЙ handle ПЛАГИНА
-# -------------------------------------------------------
+# ---------------------------------------------------
+#   ПРОВЕРКА РОЗЫГРЫША
+# ---------------------------------------------------
+
+def check_loto(bot, chat_id):
+    data = ensure_chat(chat_id)
+    chat = str(chat_id)
+
+    bank = data[chat]["bank"]
+    price = data[chat]["lotoprice"]
+    users = data[chat]["users"]
+
+    if bank < price:
+        return
+
+    if not users:
+        return
+
+    winner = random.choice(list(users.keys()))
+    winner = int(winner)
+
+    # отправка подарка
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🎁 Забрать подарок (50⭐)", callback_data="gift50"))
+
+    bot.send_message(chat_id, f"🎉 ЛОТО! Победитель — <a href='tg://user?id={winner}'>ты</a>!", parse_mode="HTML")
+    bot.send_message(winner, "🎁 Ты выиграл 50⭐ подарком!", reply_markup=kb)
+
+    # сброс банка
+    data[chat]["bank"] = 0
+    save(data)
+
+
+
+# ---------------------------------------------------
+#   КНОПКА ПОДАРКА 50⭐
+# ---------------------------------------------------
+
+def init(bot):
+    @bot.callback_query_handler(func=lambda c: c.data == "gift50")
+    def gift_press(c):
+        bot.answer_callback_query(c.id, "Подарок отправлен!")
+
+
+
+# ---------------------------------------------------
+#   КОМАНДЫ
+# ---------------------------------------------------
 
 def handle(bot, message):
-    text = message.text.lower()
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    text = message.text.split()
 
-    # /loto
-    if text == "/loto":
-        data = ensure_chat(message.chat.id)
-        bank = data[str(message.chat.id)]["bank"]
-        bot.reply_to(message, f"🎰 Банк: {bank}/100 ⭐")
+    data = ensure_chat(chat_id)
+    chat = str(chat_id)
+
+    # /lotoprice X
+    if text[0] == "/lotoprice":
+        if len(text) == 2 and text[1].isdigit():
+            data[chat]["lotoprice"] = int(text[1])
+            save(data)
+            bot.reply_to(message, f"Цена лото установлена: {text[1]} ⭐")
+        else:
+            bot.reply_to(message, "Используй: /lotoprice 100")
         return
 
-    # /gift
-    if text == "/gift":
-        handle_gift_command(bot, message)
+    # /loto – показать состояние
+    if text[0] == "/loto":
+        bot.reply_to(
+            message,
+            f"🎰 Лото:\n"
+            f"Банк: {data[chat]['bank']}/{data[chat]['lotoprice']} ⭐\n"
+            f"Участников: {len(data[chat]['users'])}"
+        )
         return
 
-    # бусты и муты
-    handle_message_based_payments(bot, message)
+    # /gift — принудительный тестовый подарок
+    if text[0] == "/gift":
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🎁 Забрать подарок (50⭐)", callback_data="gift50"))
+        bot.send_message(chat_id, "ТЕСТОВЫЙ ПОДАРОК", reply_markup=kb)
+        return
+
+
+# ---------------------------------------------------
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ MUT/BOOST
+# ---------------------------------------------------
+
+def add_stars(bot, chat_id, user_id, stars):
+    register_manual_payment(bot, chat_id, user_id, stars)
