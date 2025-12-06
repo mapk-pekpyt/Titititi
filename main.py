@@ -6,7 +6,6 @@ from plugins import sisi, hui, klitor, mut, top_plugin, kto, bust_price, loto
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-loto.init(bot)
 
 BOT_USERNAME = bot.get_me().username.lower()
 
