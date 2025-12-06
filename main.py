@@ -3,6 +3,7 @@ import os
 from triggers import TRIGGERS
 from plugins import sisi, hui, klitor, mut, top_plugin, kto, bust_price, loto
 
+loto.init(bot)
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
