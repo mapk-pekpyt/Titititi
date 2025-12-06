@@ -1,145 +1,120 @@
 # plugins/loto.py
-import os
-import json
+
 import random
+import json
+import os
 
-FILE = "data/loto.json"
-os.makedirs("data", exist_ok=True)
+FILE = "/app/loto_data.json"
 
-GIFT_AMOUNT = 50  # 50 Stars Gift
-MIN_FOR_GIFT = 100  # минимальный банк для автоматического подарка
-
-# ------------------ ФУНКЦИИ ------------------
+# -----------------------------------------
+# Загрузка / сохранение
+# -----------------------------------------
 
 def load():
     if not os.path.exists(FILE):
         return {}
     try:
-        with open(FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            # исправляем старые данные, если users не dict
-            for chat_id in data:
-                if not isinstance(data[chat_id].get("users"), dict):
-                    data[chat_id]["users"] = {}
-                if "total" not in data[chat_id]:
-                    data[chat_id]["total"] = 0
-            return data
+        with open(FILE, "r") as f:
+            return json.load(f)
     except:
         return {}
 
+
 def save(data):
-    with open(FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with open(FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+# -----------------------------------------
+# ИНИЦИАЛИЗАЦИЯ ЧАТА
+# -----------------------------------------
 
 def ensure_chat(data, chat_id):
-    if chat_id not in data:
-        data[chat_id] = {"total": 0, "users": {}}
-    else:
-        if "total" not in data[chat_id]:
-            data[chat_id]["total"] = 0
-        if not isinstance(data[chat_id].get("users"), dict):
-            data[chat_id]["users"] = {}
+    if str(chat_id) not in data:
+        data[str(chat_id)] = {
+            "bank": 0,           # накопленные звезды
+            "users": {},         # {user_id: donated}
+        }
+    return data
 
-# ------------------ ОБРАБОТКА УСПЕШНОЙ ОПЛАТЫ ------------------
+
+# -----------------------------------------
+# ОБРАБОТКА УСПЕШНОЙ ОПЛАТЫ
+# -----------------------------------------
 
 def handle_successful(bot, message):
-    """
-    Любая успешная оплата добавляется в банк лото.
-    Если банк >= MIN_FOR_GIFT, автоматически выбираем победителя.
-    """
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    amount = message.successful_payment.total_amount // 100  # stars
+
     data = load()
-    chat_id = str(message.chat.id)
-    user_id = str(message.from_user.id)
-    
-    ensure_chat(data, chat_id)
-    
-    # Берём сумму из успешной оплаты (в smallest units)
-    try:
-        stars = getattr(message.successful_payment, "total_amount", 0)
-    except:
-        stars = 0
+    data = ensure_chat(data, chat_id)
 
-    if stars <= 0:
-        return
+    # увеличить банк
+    data[str(chat_id)]["bank"] += amount
 
-    # Добавляем в банк и пользователю
-    data[chat_id]["total"] += stars
-    if user_id not in data[chat_id]["users"]:
-        data[chat_id]["users"][user_id] = 0
-    data[chat_id]["users"][user_id] += stars
+    # добавить пользователя
+    users = data[str(chat_id)]["users"]
+    users[str(user_id)] = users.get(str(user_id), 0) + amount
 
     save(data)
 
-    # Проверяем, достигнут ли минимум для подарка
-    if data[chat_id]["total"] >= MIN_FOR_GIFT:
+    bot.send_message(chat_id, f"💫 Получено `{amount}` ⭐. Банк: {data[str(chat_id)]['bank']}/100 ⭐")
+
+    # если набралось 100 — запускаем автоматический розыгрыш
+    if data[str(chat_id)]["bank"] >= 100:
         send_gift(bot, chat_id, data)
 
-# ------------------ ОТПРАВКА GIFT ------------------
+
+# -----------------------------------------
+# РОЗЫГРЫШ ПОДАРКА 50 STARS
+# -----------------------------------------
 
 def send_gift(bot, chat_id, data, forced=False):
-    """
-    Выбираем случайного донатившего и отправляем подарок.
-    Если forced=True, игнорируем минимальную сумму.
-    """
-    ensure_chat(data, chat_id)
-    users = data[chat_id]["users"]
+    chat = data[str(chat_id)]
+    users = chat["users"]
+
     if not users:
-        return
+        return bot.send_message(chat_id, "❌ Нет участников.")
 
-    # выбор победителя
-    winner_id = random.choice(list(users.keys()))
-    winner_name = get_user_name(bot, int(chat_id), int(winner_id))
+    # список [(user_id, сумма), ...]
+    arr = list(users.items())
 
-    # Отправка сообщения о подарке (50 Stars Gift)
-    bot.send_message(chat_id, f"🎁 Поздравляем {winner_name}! Ты получаешь {GIFT_AMOUNT} Stars Gift!")
+    # выбираем случайного
+    winner_id, donated = random.choice(arr)
 
-    # Сбрасываем банк и список донативших
-    data[chat_id]["total"] = 0
-    data[chat_id]["users"] = {}
+    bot.send_message(
+        chat_id,
+        f"🎁 Победитель: <a href='tg://user?id={winner_id}'>пользователь</a>\n"
+        f"Он получает подарок 50 ⭐!",
+        parse_mode="HTML"
+    )
+
+    # обнуляем банк
+    chat["bank"] = 0
+    chat["users"] = {}
+
     save(data)
 
-# ------------------ КОМАНДЫ ------------------
+
+# -----------------------------------------
+# ОБРАБОТЧИК КОМАНД
+# -----------------------------------------
 
 def handle(bot, message):
-    text = (message.text or "").strip()
-    if not text:
-        return
+    chat_id = message.chat.id
+    text = message.text.lower()
 
-    chat_id = str(message.chat.id)
     data = load()
-    ensure_chat(data, chat_id)
+    data = ensure_chat(data, chat_id)
 
-    cmd_raw = text.split()[0].lower()
-    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
-
-    # ------------------ /loto ------------------
-    if cmd == "/loto":
-        total = data[chat_id]["total"]
-        bot.reply_to(message, f"💰 Банк лото в этом чате: {total} ⭐. Минимум для розыгрыша: {MIN_FOR_GIFT} ⭐")
-        if total >= MIN_FOR_GIFT:
-            send_gift(bot, chat_id, data)
+    # команда /loto
+    if text.startswith("/loto"):
+        bank = data[str(chat_id)]["bank"]
+        bot.reply_to(message, f"🎰 Лото банк: {bank}/100 ⭐")
         return
 
-    # ------------------ /gift ------------------
-    if cmd == "/gift":
-        # Только админ чата может вручную отправить подарок
-        try:
-            admins = bot.get_chat_administrators(message.chat.id)
-            admin_ids = [a.user.id for a in admins]
-        except:
-            admin_ids = []
-
-        if message.from_user.id not in admin_ids:
-            bot.reply_to(message, "⛔ Только админы могут отправлять подарки вручную.")
-            return
-
+    # команда /gift — тестовая
+    if text.startswith("/gift"):
         send_gift(bot, chat_id, data, forced=True)
         return
-
-# ------------------ ВСПОМОГАТЕЛЬНЫЕ ------------------
-
-def get_user_name(bot, chat_id, user_id):
-    try:
-        return bot.get_chat_member(chat_id, user_id).user.first_name
-    except:
-        return "Пользователь"
