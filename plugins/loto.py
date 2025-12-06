@@ -1,109 +1,112 @@
-import os
 import json
+import os
 import random
+from telebot.types import Message
 
-FILE = "/app/data/loto.json"
+DATA_FILE = "loto_data.json"
+MIN_GIFT = 50  # размер подарка в звёздах
 
-# -------------------------------
-# Работа с файлом
-# -------------------------------
-def load():
-    if not os.path.exists(FILE):
-        return {}
-    try:
-        with open(FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+# --- загрузка и сохранение данных ---
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w") as f:
+            json.dump({}, f)
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-def save(data):
-    os.makedirs(os.path.dirname(FILE), exist_ok=True)
-    with open(FILE, "w") as f:
-        json.dump(data, f, indent=4)
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
 
-def ensure_chat(chat_id):
+# --- добавление звёзд в банк ---
+def add_stars(chat_id, user_id, stars):
+    data = load_data()
     chat_id = str(chat_id)
-    data = load()
+    if chat_id not in data:
+        data[chat_id] = {"bank": 0, "users": {}, "lotoprice": 100}
+
+    if "users" not in data[chat_id]:
+        data[chat_id]["users"] = {}
+    if user_id not in data[chat_id]["users"]:
+        data[chat_id]["users"][user_id] = 0
+
+    data[chat_id]["users"][user_id] += stars
+    data[chat_id]["bank"] += stars
+    save_data(data)
+
+# --- проверка лото ---
+def check_loto(bot, chat_id):
+    data = load_data()
+    chat_id = str(chat_id)
+    if chat_id not in data:
+        return
+    bank = data[chat_id].get("bank", 0)
+    price = data[chat_id].get("lotoprice", 100)
+    if bank >= price:
+        users = [uid for uid, stars in data[chat_id]["users"].items() if stars > 0]
+        if not users:
+            return
+        winner = random.choice(users)
+        # 🟢 дарим 50 Stars Gift
+        try:
+            bot.send_message(winner, f"🎁 Поздравляем! Вы получили Stars Gift на {MIN_GIFT}⭐")
+        except:
+            pass
+        # снимаем 50 звезд с баланса бота (условно)
+        # уменьшаем банк на 50
+        data[chat_id]["bank"] -= MIN_GIFT
+        # обнуляем участников
+        data[chat_id]["users"] = {}
+        save_data(data)
+
+# --- установка лотопрайса ---
+def set_price(chat_id, price):
+    data = load_data()
+    chat_id = str(chat_id)
+    if chat_id not in data:
+        data[chat_id] = {"bank": 0, "users": {}, "lotoprice": price}
+    else:
+        data[chat_id]["lotoprice"] = price
+    save_data(data)
+
+# --- обработка команд ---
+def handle(bot, message: Message):
+    data = load_data()
+    chat_id = str(message.chat.id)
+    text = message.text.lower()
 
     if chat_id not in data:
-        data[chat_id] = {}
+        data[chat_id] = {"bank": 0, "users": {}, "lotoprice": 100}
 
-    if "bank" not in data[chat_id]:
-        data[chat_id]["bank"] = 0
+    # /lotoprice X
+    if text.startswith("/lotoprice"):
+        try:
+            price = int(text.split()[1])
+            set_price(chat_id, price)
+            bot.reply_to(message, f"💰 Лотопрайс установлен: {price}⭐")
+        except:
+            bot.reply_to(message, f"❌ Используйте: /lotoprice 100")
 
-    if "users" not in data[chat_id] or not isinstance(data[chat_id]["users"], dict):
-        data[chat_id]["users"] = {}
+    # /loto
+    elif text.startswith("/loto"):
+        bank = data[chat_id].get("bank", 0)
+        price = data[chat_id].get("lotoprice", 100)
+        users = len(data[chat_id].get("users", {}))
+        bot.reply_to(message, f"🎰 Лото:\nБанк: {bank}/{price} ⭐\nУчастников: {users}")
+        save_data(data)
 
-    if "lotoprice" not in data[chat_id]:
-        data[chat_id]["lotoprice"] = 100  # стандартная цена лото
-
-    save(data)
-    return data
-
-# -------------------------------
-# Добавление звезд в банк
-# -------------------------------
-def add_stars(chat_id, user_id, stars):
-    data = ensure_chat(chat_id)
-    chat = str(chat_id)
-
-    data[chat]["bank"] += stars
-    if str(user_id) not in data[chat]["users"]:
-        data[chat]["users"][str(user_id)] = 0
-    data[chat]["users"][str(user_id)] += stars
-
-    save(data)
-    return data[chat]["bank"], data[chat]["lotoprice"]
-
-# -------------------------------
-# Проверка лото
-# -------------------------------
-def check_loto(bot, chat_id):
-    data = ensure_chat(chat_id)
-    chat = str(chat_id)
-    bank = data[chat]["bank"]
-    lotoprice = data[chat]["lotoprice"]
-
-    if bank >= lotoprice and data[chat]["users"]:
-        winner_id = int(random.choice(list(data[chat]["users"].keys())))
-        send_gift(bot, winner_id, 50)
-        bot.send_message(chat_id, f"🎉 Лото! Победитель — <a href='tg://user?id={winner_id}'>твой счастливчик</a>! Получает 50⭐", parse_mode="HTML")
-        data[chat]["bank"] = 0
-        data[chat]["users"] = {}
-        save(data)
-
-# -------------------------------
-# Отправка подарка
-# -------------------------------
-def send_gift(bot, user_id, amount):
-    bot.send_message(user_id, f"🎁 Ты получил {amount}⭐ подарком!")
-
-# -------------------------------
-# Команды
-# -------------------------------
-def handle(bot, message):
-    chat_id = message.chat.id
-    chat = str(chat_id)
-    data = ensure_chat(chat_id)
-    text = message.text.split()
-
-    if text[0] == "/lotoprice":
-        if len(text) == 2 and text[1].isdigit():
-            data[chat]["lotoprice"] = int(text[1])
-            save(data)
-            bot.reply_to(message, f"Цена лото установлена: {text[1]} ⭐")
-        else:
-            bot.reply_to(message, "Используй: /lotoprice 100")
-        return
-
-    if text[0] == "/loto":
-        bot.reply_to(message, f"🎰 Лото:\nБанк: {data[chat]['bank']}/{data[chat]['lotoprice']} ⭐\nУчастников: {len(data[chat]['users'])}")
-        return
-
-    if text[0] == "/gift":
-        # тестовая кнопка подарка
-        kb = None
-        winner_id = message.from_user.id
-        send_gift(bot, winner_id, 50)
-        bot.reply_to(message, f"🎁 Тестовый подарок 50⭐ отправлен тебе!")
-        return
+    # /gift - тестовая команда для тебя
+    elif text.startswith("/gift"):
+        users = list(data[chat_id].get("users", {}).keys())
+        if not users:
+            bot.reply_to(message, "❌ Нет участников для подарка.")
+            return
+        winner = random.choice(users)
+        try:
+            bot.send_message(winner, f"🎁 Вы получили Stars Gift на {MIN_GIFT}⭐ (тестовая команда)")
+            bot.reply_to(message, f"✅ Подарок отправлен пользователю {winner}")
+            # снимаем 50⭐ с банка бота
+            data[chat_id]["bank"] = max(0, data[chat_id]["bank"] - MIN_GIFT)
+            save_data(data)
+        except Exception as e:
+            bot.reply_to(message, f"❌ Ошибка при отправке подарка: {e}")
