@@ -6,7 +6,6 @@ from telebot.types import Message
 
 DATA_FILE = "plugins/loto_data.json"
 
-# загрузка данных
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -14,12 +13,10 @@ def load_data():
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# сохранение данных
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# добавить оплату в банк
 def add_payment(chat_id, user_id, stars):
     data = load_data()
     chat_s = str(chat_id)
@@ -34,7 +31,6 @@ def add_payment(chat_id, user_id, stars):
     save_data(data)
     return data[chat_s]["bank"]
 
-# отправка подарка 50⭐ рандомному донатеру
 def send_gift(bot, chat_id, forced=False):
     data = load_data()
     chat_s = str(chat_id)
@@ -50,7 +46,6 @@ def send_gift(bot, chat_id, forced=False):
         return
 
     winner_id = int(random.choice(users))
-    # списываем 50 звезд из банка (реально)
     data[chat_s]["bank"] -= 50
     save_data(data)
 
@@ -63,11 +58,11 @@ def send_gift(bot, chat_id, forced=False):
         f"🎉 В чате {chat_id} подарок 50⭐ отправлен случайному донатеру!"
     )
 
-# обработка сообщений
 def handle(bot, message: Message):
     text = (message.text or "").strip().lower()
     chat_id = message.chat.id
     user_id = message.from_user.id
+
     data = load_data()
     chat_s = str(chat_id)
 
@@ -75,7 +70,7 @@ def handle(bot, message: Message):
         data[chat_s] = {"bank": 0, "users": {}}
         save_data(data)
 
-    # команда /loto — показать банк
+    # команда /loto — показать банк и участников текущего чата
     if text.startswith("/loto"):
         bank = data[chat_s]["bank"]
         users_count = len(data[chat_s]["users"])
@@ -85,20 +80,17 @@ def handle(bot, message: Message):
         )
         return
 
-    # команда /gift — тестовая отправка 50⭐ подарка
+    # команда /gift — тестовая отправка 50⭐ подарка в этом чате
     if text.startswith("/gift"):
         send_gift(bot, chat_id, forced=True)
         bot.reply_to(message, "✅ Тестовый подарок 50⭐ отправлен!")
         return
 
-# вызывается из main при успешной оплате
 def handle_successful(bot, message):
     if not hasattr(message, "successful_payment") or not message.successful_payment:
         return
 
-    # количество звезд — берем сумму из успешной оплаты
     stars = getattr(message.successful_payment, "total_amount", 0)
-    # у XTR суммы обычно в копейках (целое число), делим на 100 для звезд
     stars = max(int(stars / 100), 1)
 
     chat_id = message.chat.id
@@ -106,11 +98,12 @@ def handle_successful(bot, message):
 
     bank = add_payment(chat_id, user_id, stars)
 
+    # сообщение в чат, где была оплата
     bot.send_message(
         chat_id,
         f"💫 Получено `{stars}` ⭐. Банк: {bank}/100 ⭐"
     )
 
-    # проверка — если банк >= 100, автоматически дарим подарок
+    # проверка для розыгрыша в этом чате
     if bank >= 100:
         send_gift(bot, chat_id)
