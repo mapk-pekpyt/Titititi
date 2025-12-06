@@ -43,12 +43,34 @@ def checkout(pre_checkout_query):
 # -----------------------------------------------------
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
+    # 1️⃣ Обработка всех плагинов как было
     for name, plugin in PLUGINS.items():
         try:
             if hasattr(plugin, "handle_successful"):
                 plugin.handle_successful(bot, message)
         except Exception as e:
             print(f"❌ Ошибка в обработке оплаты у {name}: {e}")
+
+    # 2️⃣ Лото: добавляем реальные звезды в банк и проверяем лото
+    try:
+        stars = 0
+
+        # 💡 Берём количество звезд из платежа
+        if hasattr(message, "successful_payment"):
+            # пример: 1 звезда = 100 единиц платежа (как у тебя в системе)
+            stars = message.successful_payment.total_amount // 100
+
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+
+        if stars > 0:
+            # Добавляем в банк лото
+            loto.add_stars(chat_id, user_id, stars)
+            # Проверяем, не пора ли разыграть
+            loto.check_loto(bot, chat_id)
+
+    except Exception as e:
+        print(f"❌ Ошибка при добавлении звезд в лото: {e}")
 
 
 # ---------------------------------------------
