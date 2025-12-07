@@ -47,4 +47,11 @@ TRIGGERS = {
     
     "/gift": "loto",
     "/gift@Sisititibot": "loto",
+    
+    "/minuss": "minus",
+    "/minuss@Sisititibot": "minus",
+    "/minush": "minus",
+    "/minush@Sisititibot": "minus",
+    "/minusk": "minus",
+    "/minusk@Sisititibot": "minus",
 }
