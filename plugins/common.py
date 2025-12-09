@@ -1,27 +1,42 @@
 import random
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 DATA_FILE = "plugins/data.json"
 
-# Германия
+# ---------------------------
+# Германия: текущая дата
+# ---------------------------
 def german_date():
     return datetime.now(timezone.utc).astimezone().date()
 
+# ---------------------------
 # Вероятности
-# Вероятности роста
+# ---------------------------
 def weighted_random():
     r = random.randint(1, 100)
     if r <= 65:
-@@ -23,4 +27,61 @@ def get_name(user):
+        return True
+    return False
+
+# ---------------------------
+# Получение имени пользователя
+# ---------------------------
+def get_name(user):
+    if not user:
+        return "Безымянный"
+    if hasattr(user, "first_name") and user.first_name:
+        if hasattr(user, "last_name") and user.last_name:
+            return f"{user.first_name} {user.last_name}"
         return user.first_name
-    if user.username:
+    if hasattr(user, "username") and user.username:
         return f"@{user.username}"
     return "Безымянный"
-    return "Безымянный"
 
+# ---------------------------
 # Работа с данными пользователей
+# ---------------------------
 def ensure_user(chat_id, user):
     if not os.path.exists(DATA_FILE):
         data = {}
@@ -54,7 +69,7 @@ def update_stat(chat_id, user, field, delta):
     user_id = str(user.id)
     chat_id = str(chat_id)
     data[chat_id][user_id][field] += delta
-    # Никогда не делаем отрицательные размеры
+    # Никогда не делаем отрицательные значения
     if data[chat_id][user_id][field] < 0:
         data[chat_id][user_id][field] = 0
     with open(DATA_FILE, "w", encoding="utf-8") as f:
