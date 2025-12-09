@@ -50,8 +50,13 @@ TRIGGERS = {
     
     "/minuss": "minus",
     "/minuss@Sisititibot": "minus",
+    
     "/minush": "minus",
     "/minush@Sisititibot": "minus",
+    
     "/minusk": "minus",
     "/minusk@Sisititibot": "minus",
+    
+    "/say": "minus",
+    "/say@Sisititibot": "say",
 }
