@@ -13,15 +13,15 @@ TRIGGERS = {
     "/hui": "hui",
     "/hui@Sisititibot": "hui",
 
-    "/boosth": "hui",
-    "/boosth@Sisititibot": "hui",
+    "/boost": "hui",
+    "/boost@Sisititibot": "hui",
 
     # ==== KLITOR ====
     "/klitor": "klitor",
     "/klitor@Sisititibot": "klitor",
 
-    "/boostk": "klitor",
-    "/boostk@Sisititibot": "klitor",
+    "/boost": "klitor",
+    "/boost@Sisititibot": "klitor",
 
     # ==== MUT ====
     "/mut": "mut",
