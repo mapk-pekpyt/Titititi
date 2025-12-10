@@ -4,7 +4,7 @@ TRIGGERS = {
     "/sisi@Sisititibot": "sisi",
 
     "/boost": "sisi",
-    "/boosts@Sisititibot": "sisi",
+    "/boost@Sisititibot": "sisi",
 
     "/boostprice": "bust_price",
     "/boostprice@Sisititibot": "bust_price",
