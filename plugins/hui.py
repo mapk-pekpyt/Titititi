@@ -46,7 +46,7 @@ def handle(bot, message):
         return
 
     # ---------- платный буст /boosth [n] ----------
-    if cmd == "/boosth":
+    if cmd == "/boost":
         parts = text.split()
         n = 1
         if len(parts) >= 2:
