@@ -3,8 +3,8 @@ TRIGGERS = {
     "/sisi": "sisi",
     "/sisi@Sisititibot": "sisi",
 
-    "/boost": "sisi",
-    "/boost@Sisititibot": "sisi",
+    "/boosts": "sisi",
+    "/boosts@Sisititibot": "sisi",
 
     "/boostprice": "bust_price",
     "/boostprice@Sisititibot": "bust_price",
@@ -13,15 +13,15 @@ TRIGGERS = {
     "/hui": "hui",
     "/hui@Sisititibot": "hui",
 
-    "/boost": "hui",
-    "/boost@Sisititibot": "hui",
+    "/boosth": "hui",
+    "/boosth@Sisititibot": "hui",
 
     # ==== KLITOR ====
     "/klitor": "klitor",
     "/klitor@Sisititibot": "klitor",
 
-    "/boost": "klitor",
-    "/boost@Sisititibot": "klitor",
+    "/boostk": "klitor",
+    "/boostk@Sisititibot": "klitor",
 
     # ==== MUT ====
     "/mut": "mut",
