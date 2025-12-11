@@ -4,10 +4,10 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, LabeledPri
 
 DATA_FILE = "plugins/ads_data.json"
 ADMIN_ID = 5791171535  # твой Telegram ID
-PRICE_PER_SHOW = 1  # цена по умолчанию за 1 показ
+PRICE_PER_SHOW = 1  # по умолчанию цена за 1 показ
 
 # -----------------------------
-# Загрузка и сохранение данных
+# Загрузка/сохранение данных
 # -----------------------------
 def load_ads():
     if os.path.exists(DATA_FILE):
@@ -80,6 +80,9 @@ def handle(bot, message):
     ad = data["pending"][user_id]
 
     if ad["step"] == "text":
+        if not message.text:
+            bot.send_message(message.chat.id, "❌ Введите текст рекламы!")
+            return
         ad["text"] = message.text
         ad["step"] = "photo"
         save_ads(data)
@@ -113,7 +116,7 @@ def handle(bot, message):
         return
 
 # -----------------------------
-# Callback для кнопок
+# Callback кнопки
 # -----------------------------
 def handle_callback(bot, call):
     data = load_ads()
@@ -138,7 +141,6 @@ def handle_callback(bot, call):
         if price <= 0:
             bot.send_message(int(user_id), "✅ Ваша реклама бесплатно опубликована!")
         else:
-            # Тут можно встроить оплату Stars через Telegram (провайдер токен должен быть в ENV)
             from telebot.types import LabeledPrice
             try:
                 bot.send_invoice(
