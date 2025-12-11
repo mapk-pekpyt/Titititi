@@ -28,6 +28,8 @@ PLUGINS = {
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
     top_plugin.handle_my(bot, message)
+    # Вставка рекламы
+    ads.attach_ad(bot, message.chat.id)
 
 # ---------------------------------------------
 # Stars: pre-checkout
@@ -63,20 +65,21 @@ def payment_handler(message):
         if stars > 0:
             loto.add_stars(chat_id, user_id, stars)
             loto.check_loto(bot, chat_id)
-
     except Exception as e:
         print(f"❌ Ошибка при добавлении звезд в лото: {e}")
 
 # ---------------------------------------------
-# Обработчик callback'ов для рекламы
+# Callback для рекламы и админских действий
 # ---------------------------------------------
-@bot.callback_query_handler(func=lambda call: call.data.startswith("ads_"))
-def ads_callback(call):
-    ads.callback(bot, call)
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    if call.data.startswith("ads_"):
+        ads.callback(bot, call)
+        ads.handle_admin(bot, call)
 
-# ------------------------------------------------------------------------
-# Главный обработчик команд и текстовых сообщений
-# ------------------------------------------------------------------------
+# ---------------------------------------------
+# Главный обработчик всех сообщений
+# ---------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all_messages(message):
     text = message.text
@@ -84,18 +87,28 @@ def handle_all_messages(message):
         return
 
     text_low = text.lower()
-    user_id = str(message.from_user.id)
 
     # --------------------------
-    # Проверка на режим рекламы
+    # 1️⃣ Рекламные команды
     # --------------------------
+    if text_low.startswith("/buy_ads"):
+        ads.handle_buy(bot, message)
+        return
+    elif text_low.startswith("/priser"):
+        ads.handle_priser(bot, message)
+        return
+
+    # --------------------------
+    # 2️⃣ Проверка на пользователей в процессе рекламы
+    # --------------------------
+    user_id = str(message.from_user.id)
     data = ads.load_data()
     if user_id in data.get("pending", {}):
         ads.handle(bot, message)
         return
 
     # --------------------------
-    # 1️⃣ Команды с /
+    # 3️⃣ Команды через /
     # --------------------------
     cmd_raw = text_low.split()[0]
     if cmd_raw.startswith("/"):
@@ -103,16 +116,16 @@ def handle_all_messages(message):
             cmd = cmd_raw.split("@")[0]
         else:
             cmd = cmd_raw
-
         plugin_name = TRIGGERS.get(cmd)
         if plugin_name:
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
+                ads.attach_ad(bot, message.chat.id)
             return
 
     # --------------------------
-    # 2️⃣ Текстовые команды без /
+    # 4️⃣ Текстовые команды без /
     # --------------------------
     for trigger, plugin_name in TRIGGERS.items():
         trig = trigger.replace("/", "").lower()
@@ -120,12 +133,8 @@ def handle_all_messages(message):
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
+                ads.attach_ad(bot, message.chat.id)
             return
-
-    # --------------------------
-    # 3️⃣ Нет команд → ничего
-    # --------------------------
-    return
 
 # ---------------------------------------------
 # Старт
