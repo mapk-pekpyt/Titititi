@@ -113,6 +113,16 @@ def handle_all_messages(message):
     if not text:
         return
 
+    user_id = str(message.from_user.id)
+    # Проверяем, не в процессе ли юзер покупки рекламы
+    try:
+        data = ads.load_ads()
+        if user_id in data.get("pending", {}):
+            ads.handle(bot, message)
+            return
+    except Exception:
+        pass
+
     cmd_raw = text.split()[0].lower()
 
     # поддержка /cmd@username
@@ -121,9 +131,10 @@ def handle_all_messages(message):
     else:
         cmd = cmd_raw
 
+    # Проверка триггеров (англ + рус)
     plugin_name = TRIGGERS.get(cmd)
     if not plugin_name:
-        # если команда не из триггеров, всё равно показываем рекламу при действии
+        # Если команда не из триггеров, и не реклама — обрабатываем как обычный текст
         try:
             ads.send_random_ads(bot, message.chat.id)
         except Exception:
@@ -132,13 +143,13 @@ def handle_all_messages(message):
 
     plugin = PLUGINS.get(plugin_name)
     if not plugin:
-        # аналогично — показываем рекламу при действии
         try:
             ads.send_random_ads(bot, message.chat.id)
         except Exception:
             pass
         return
 
+    # Вызываем handle плагина
     if hasattr(plugin, "handle"):
         try:
             plugin.handle(bot, message)
@@ -147,11 +158,10 @@ def handle_all_messages(message):
     else:
         print(f"❗ Плагин {plugin_name} не имеет функции handle()")
 
-    # После обработки команды — показываем рекламу (если есть активные)
+    # После обработки команды — показываем рекламу
     try:
         ads.send_random_ads(bot, message.chat.id)
     except Exception as e:
-        # не фатальная ошибка, логируем
         print("Ошибка показа рекламы:", e)
 
 
