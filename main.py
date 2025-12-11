@@ -23,24 +23,19 @@ PLUGINS = {
 }
 
 # ---------------------------------------------
-# Обработчик /my
+# /my
 # ---------------------------------------------
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
     top_plugin.handle_my(bot, message)
-    ads.attach_ad(bot, message.chat.id)  # вставляем рекламу после ответа
-
+    ads.attach_ad(bot, message.chat.id)
 
 # ---------------------------------------------
 # Stars: pre-checkout
 # ---------------------------------------------
 @bot.pre_checkout_query_handler(func=lambda q: True)
 def checkout(pre_checkout_query):
-    try:
-        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
-    except Exception as e:
-        print("❌ Ошибка pre-checkout:", e)
-
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
 # ---------------------------------------------
 # Stars: успешная оплата
@@ -48,75 +43,53 @@ def checkout(pre_checkout_query):
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
     for name, plugin in PLUGINS.items():
-        try:
-            if hasattr(plugin, "handle_successful"):
-                plugin.handle_successful(bot, message)
-        except Exception as e:
-            print(f"❌ Ошибка в обработке оплаты у {name}: {e}")
+        if hasattr(plugin, "handle_successful"):
+            plugin.handle_successful(bot, message)
 
+    # Лото
     try:
         stars = 0
         if hasattr(message, "successful_payment"):
             stars = message.successful_payment.total_amount // 100
-
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-
-        if stars > 0:
-            loto.add_stars(chat_id, user_id, stars)
-            loto.check_loto(bot, chat_id)
-    except Exception as e:
-        print(f"❌ Ошибка при добавлении звезд в лото: {e}")
-
+        loto.add_stars(message.chat.id, message.from_user.id, stars)
+        loto.check_loto(bot, message.chat.id)
+    except:
+        pass
 
 # ---------------------------------------------
-# Callback для рекламы (только ads)
+# Callback рекламы
 # ---------------------------------------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("ads_"))
 def ads_callback(call):
     ads.callback(bot, call)
 
-
 # ---------------------------------------------
-# Главный обработчик
+# Обработка текста и фото
 # ---------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all_messages(message):
-    chat_type = message.chat.type
 
-    text = message.text
-    text_low = text.lower() if text else ""
-
+    # 1️⃣ если юзер в процессе покупки рекламы
+    data = ads.load_data()
     user_id = str(message.from_user.id)
+    if user_id in data.get("pending", {}):
+        ads.handle(bot, message)
+        return
 
-    # -------------------------------------
-    # 0️⃣ Реклама работает ТОЛЬКО В ЛС
-    # -------------------------------------
-    if chat_type == "private":
-        data = ads.load()  # ФИКС: тут было load_data()
+    # 2️⃣ если это рекламные команды
+    text = message.text.lower() if message.text else ""
+    if text.startswith("/buy_ads"):
+        ads.handle_buy(bot, message)
+        return
 
-        # Если юзер в процессе создания рекламы — отправляем в ads.handle()
-        if user_id in data.get("pending", {}):
-            ads.handle(bot, message)
-            return
+    if text.startswith("/priser"):
+        ads.handle_priser(bot, message)
+        return
 
-        # Команда запуска покупки рекламы
-        if text_low.startswith("/buy_ads"):
-            ads.handle_buy(bot, message)
-            return
-
-        # Установка цены
-        if text_low.startswith("/priser"):
-            ads.handle_priser(bot, message)
-            return
-
-    # -------------------------------------
-    # 1️⃣ Команды через /
-    # -------------------------------------
-    if text_low and text_low.startswith("/"):
-        cmd_raw = text_low.split()[0]
-        cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
-
+    # 3️⃣ обычные плагины
+    cmd_raw = text.split()[0] if text else ""
+    if cmd_raw.startswith("/"):
+        cmd = cmd_raw.split("@")[0]
         plugin_name = TRIGGERS.get(cmd)
         if plugin_name:
             plugin = PLUGINS.get(plugin_name)
@@ -125,23 +98,15 @@ def handle_all_messages(message):
                 ads.attach_ad(bot, message.chat.id)
             return
 
-    # -------------------------------------
-    # 2️⃣ Текстовые команды без /
-    # -------------------------------------
-    if text_low:
-        for trigger, plugin_name in TRIGGERS.items():
-            trig = trigger.replace("/", "").lower()
-            if text_low.startswith(trig):
-                plugin = PLUGINS.get(plugin_name)
-                if plugin and hasattr(plugin, "handle"):
-                    plugin.handle(bot, message)
-                    ads.attach_ad(bot, message.chat.id)
-                return
+    for trigger, plugin_name in TRIGGERS.items():
+        trig = trigger.replace("/", "").lower()
+        if text.startswith(trig):
+            plugin = PLUGINS.get(plugin_name)
+            if plugin and hasattr(plugin, "handle"):
+                plugin.handle(bot, message)
+                ads.attach_ad(bot, message.chat.id)
+            return
 
 
-# ---------------------------------------------
-# Старт
-# ---------------------------------------------
-if __name__ == "__main__":
-    print("Бот запущен...")
-    bot.infinity_polling()
+print("Бот запущен...")
+bot.infinity_polling()
