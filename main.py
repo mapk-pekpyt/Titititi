@@ -32,6 +32,14 @@ def my_sizes(message):
 
 
 # ---------------------------------------------
+# Запуск рекламы /ads
+# ---------------------------------------------
+@bot.message_handler(commands=["ads"])
+def ads_start(message):
+    ads.start(bot, message)
+
+
+# ---------------------------------------------
 # Stars: pre-checkout
 # ---------------------------------------------
 @bot.pre_checkout_query_handler(func=lambda q: True)
@@ -73,24 +81,20 @@ def payment_handler(message):
 
 
 # ------------------------------------------------------------------------
-# Новый ОБЯЗАТЕЛЬНЫЙ обработчик — сначала проверяем рекламу
+# Перехват сообщений рекламного процесса
 # ------------------------------------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
 def ads_interceptor(message):
-    """
-    Если пользователь в процессе рекламы — перехватываем сообщение,
-    иначе передаём в основной обработчик.
-    """
     user_id = str(message.from_user.id)
     data = ads.load_data()
 
-    # Если пользователь в режиме рекламы → перехватываем
+    # Если человек внутри рекламного процесса → отправляем в ads.handle
     if user_id in data.get("pending", {}):
         ads.handle(bot, message)
         return
 
-    # Иначе — передаём в главный обработчик
-    handle_all_messages(message)
+    # Иначе — обычная логика
+    return handle_all_messages(message)
 
 
 # ------------------------------------------------------------------------
@@ -101,7 +105,7 @@ def handle_all_messages(message):
     if not text:
         return
 
-    text_low = text.lower()
+    text_low = text.lower().strip()
 
     # --------------------------
     # 1️⃣ Если команда начинается с /cmd
@@ -122,18 +126,20 @@ def handle_all_messages(message):
             return
 
     # --------------------------
-    # 2️⃣ Поддержка текстовых команд без /
-    # пример: "сиськи", "hui", "расклад", "кто я"
+    # 2️⃣ Текстовые команды без слэша
     # --------------------------
+    first_word = text_low.split()[0]  # анализируем первое слово
     for trigger, plugin_name in TRIGGERS.items():
-        trig = trigger.replace("/", "").lower()
-        if text_low.startswith(trig):
+        pure_trigger = trigger.replace("/", "").lower()
+
+        # пример: pure_trigger="sisi", first_word="сиськи" → ок
+        if pure_trigger in first_word:
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
             return
 
-    # Если дошли сюда → никаких команд нет
+    # Если команды нет – игнорируем
     return
 
 
