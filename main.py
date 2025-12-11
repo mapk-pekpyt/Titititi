@@ -28,8 +28,6 @@ PLUGINS = {
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
     top_plugin.handle_my(bot, message)
-    # Вставка рекламы
-    ads.attach_ad(bot, message.chat.id)
 
 # ---------------------------------------------
 # Stars: pre-checkout
@@ -69,23 +67,18 @@ def payment_handler(message):
         print(f"❌ Ошибка при добавлении звезд в лото: {e}")
 
 # ---------------------------------------------
-# Callback для рекламы и админских действий
+# Callback для рекламы
 # ---------------------------------------------
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    if call.data.startswith("ads_"):
-        ads.callback(bot, call)
-        ads.handle_admin(bot, call)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("ads_"))
+def ads_callback(call):
+    ads.callback(bot, call)
 
 # ---------------------------------------------
 # Главный обработчик всех сообщений
 # ---------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all_messages(message):
-    text = message.text
-    if not text:
-        return
-
+    text = message.text or ""
     text_low = text.lower()
 
     # --------------------------
@@ -95,7 +88,7 @@ def handle_all_messages(message):
         ads.handle_buy(bot, message)
         return
     elif text_low.startswith("/priser"):
-        ads.handle_priser(bot, message)
+        ads.handle_pricer(bot, message)
         return
 
     # --------------------------
@@ -112,16 +105,12 @@ def handle_all_messages(message):
     # --------------------------
     cmd_raw = text_low.split()[0]
     if cmd_raw.startswith("/"):
-        if "@" in cmd_raw:
-            cmd = cmd_raw.split("@")[0]
-        else:
-            cmd = cmd_raw
+        cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
         plugin_name = TRIGGERS.get(cmd)
         if plugin_name:
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
-                ads.attach_ad(bot, message.chat.id)
             return
 
     # --------------------------
@@ -133,7 +122,6 @@ def handle_all_messages(message):
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
-                ads.attach_ad(bot, message.chat.id)
             return
 
 # ---------------------------------------------
