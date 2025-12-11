@@ -1,172 +1,159 @@
 import telebot
+from telebot import types
 import json
 import os
-from telebot import types
 
 DATA_FILE = "plugins/ads_data.json"
+ADMIN_ID = 5791171535  # Твой Telegram ID
 
-# Загружаем данные
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"pending": {}, "approved": [], "price": 1}
+    if not os.path.exists(DATA_FILE):
+        return {"pending": {}, "approved": {}, "price": 10}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# -----------------------------
-# Обработка сообщений пользователей
-# -----------------------------
+# -------------------------
+# Команда /priser
+# -------------------------
+def handle_priser(bot, message):
+    data = load_data()
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        bot.reply_to(message, f"Текущая цена рекламы: {data.get('price',10)} звезд.")
+        return
+    try:
+        price = int(parts[1])
+        if price < 0:
+            price = 0
+        data['price'] = price
+        save_data(data)
+        bot.reply_to(message, f"Цена рекламы установлена на {price} звезд за 1 рассылку.")
+    except:
+        bot.reply_to(message, "Неверное число. Используйте /priser <число>")
+
+# -------------------------
+# Команда /buy_ads
+# -------------------------
+def handle_buy(bot, message):
+    user_id = str(message.from_user.id)
+    data = load_data()
+    data['pending'][user_id] = {"step": "text", "text": "", "photo": None}
+    save_data(data)
+    bot.reply_to(message, "Отправьте текст вашей рекламы:")
+
+# -------------------------
+# Обработка сообщений пользователей в процессе рекламы
+# -------------------------
 def handle(bot, message):
     user_id = str(message.from_user.id)
     data = load_data()
+    if user_id not in data.get("pending", {}):
+        return False  # Не реклама
 
-    # -----------------------------
-    # 1. Новый пользователь начинает рекламу
-    # -----------------------------
-    if user_id not in data["pending"]:
-        data["pending"][user_id] = {
-            "step": "text",  # text -> confirm -> photo -> admin
-            "text": "",
-            "photo": None,
-            "count": 1
-        }
-        save_data(data)
-        bot.send_message(message.chat.id, "Отправьте текст вашей рекламы:")
-        return
+    user_data = data['pending'][user_id]
+    step = user_data.get("step")
 
-    user_ads = data["pending"][user_id]
-    step = user_ads["step"]
-
-    # -----------------------------
-    # 2. Шаг: получение текста
-    # -----------------------------
-    if step == "text" and message.content_type == "text":
-        user_ads["text"] = message.text
-        user_ads["step"] = "confirm_text"
+    if step == "text":
+        user_data['text'] = message.text
+        user_data['step'] = "confirm_text"
         save_data(data)
 
-        # Кнопки: Продолжить / Изменить число / Изменить текст
         markup = types.InlineKeyboardMarkup()
-        markup.add(
-            types.InlineKeyboardButton("✅ Продолжить", callback_data="ads_confirm_continue"),
-            types.InlineKeyboardButton("✏️ Изменить число рассылок", callback_data="ads_confirm_change_count"),
-            types.InlineKeyboardButton("📝 Изменить текст", callback_data="ads_confirm_change_text")
-        )
-        bot.send_message(message.chat.id,
-                         f"Ваша реклама стоит {data['price']} звезд за одну рассылку.\n"
-                         f"Текст:\n{message.text}\nВыберите действие:", reply_markup=markup)
-        return
+        markup.add(types.InlineKeyboardButton("✅ Продолжить", callback_data="ads_confirm_text"))
+        markup.add(types.InlineKeyboardButton("✏️ Изменить текст", callback_data="ads_edit_text"))
+        bot.reply_to(message, f"Ваша реклама:\n\n{message.text}\n\nЦена: {data.get('price',10)} звезд. Хотите продолжить?", reply_markup=markup)
+        return True
 
-    # -----------------------------
-    # 3. Шаг: получение фото
-    # -----------------------------
     if step == "photo" and message.content_type == "photo":
         photo_id = message.photo[-1].file_id
-        user_ads["photo"] = photo_id
-        user_ads["step"] = "admin"
+        user_data['photo'] = photo_id
+        user_data['step'] = "ready_to_send"
         save_data(data)
+        bot.reply_to(message, "Фото добавлено. Нажмите 'Подтвердить рекламу' когда готовы.", reply_markup=confirm_markup())
+        return True
 
-        # Отправляем админу (ваш ID: 5791171535)
-        markup = types.InlineKeyboardMarkup()
-        markup.add(
-            types.InlineKeyboardButton("✅ Одобрить", callback_data=f"ads_admin_approve_{user_id}"),
-            types.InlineKeyboardButton("❌ Отклонить", callback_data=f"ads_admin_reject_{user_id}")
-        )
-        bot.send_photo(5791171535, photo_id,
-                       caption=f"Реклама от {message.from_user.first_name}:\n{user_ads['text']}",
-                       reply_markup=markup)
-        bot.send_message(message.chat.id, "Ожидайте одобрения администрации...")
-        return
+    return True
 
-# -----------------------------
-# Обработка callback кнопок
-# -----------------------------
+# -------------------------
+# Клавиатура подтверждения
+# -------------------------
+def confirm_markup():
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ Подтвердить рекламу", callback_data="ads_send_admin"))
+    return markup
+
+# -------------------------
+# Обработка callback
+# -------------------------
 def callback(bot, call):
     user_id = str(call.from_user.id)
     data = load_data()
-
-    # -----------------------------
-    # 1. Пользователь подтверждает текст/количество
-    # -----------------------------
-    if call.data.startswith("ads_confirm_"):
-        if user_id not in data["pending"]:
-            bot.answer_callback_query(call.id, "Нет активной рекламы")
-            return
-        user_ads = data["pending"][user_id]
-
-        if call.data == "ads_confirm_continue":
-            user_ads["step"] = "photo"
-            save_data(data)
-            bot.send_message(call.message.chat.id, "Прикрепите фото рекламы:")
-            bot.answer_callback_query(call.id)
-            return
-
-        if call.data == "ads_confirm_change_count":
-            bot.send_message(call.message.chat.id, "Сколько рассылок вы хотите сделать?")
-            user_ads["step"] = "change_count"
-            save_data(data)
-            bot.answer_callback_query(call.id)
-            return
-
-        if call.data == "ads_confirm_change_text":
-            bot.send_message(call.message.chat.id, "Введите новый текст рекламы:")
-            user_ads["step"] = "text"
-            save_data(data)
-            bot.answer_callback_query(call.id)
-            return
-
-    # -----------------------------
-    # 2. Админ одобряет/отклоняет
-    # -----------------------------
-    if call.data.startswith("ads_admin_"):
-        action, target_id = call.data.split("_")[2], call.data.split("_")[3]
-        if target_id not in data["pending"]:
-            bot.answer_callback_query(call.id, "Пользователь не найден")
-            return
-        user_ads = data["pending"][target_id]
-
-        if action == "approve":
-            user_ads["step"] = "payment"
-            save_data(data)
-
-            # Кнопка оплаты
-            markup = types.InlineKeyboardMarkup()
-            markup.add(
-                types.InlineKeyboardButton("💳 Оплатить рекламу", pay=True)
-            )
-            bot.send_message(int(target_id), "Ваша реклама одобрена. Оплатите для рассылки:", reply_markup=markup)
-            bot.answer_callback_query(call.id)
-            return
-
-        if action == "reject":
-            user_ads["step"] = "rejected"
-            save_data(data)
-            bot.send_message(int(target_id), "Ваша реклама отклонена. Пожалуйста, измените текст и попробуйте снова.")
-            bot.answer_callback_query(call.id)
-            return
-
-# -----------------------------
-# Генерация рекламы при каждом сообщении
-# -----------------------------
-def get_random_ad():
-    data = load_data()
-    if not data.get("approved"):
-        return None
-    # Берём случайную одобренную рекламу
-    ad = data["approved"].pop(0)
-    # возвращаем в конец для чередования
-    data["approved"].append(ad)
-    save_data(data)
-    return ad
-
-def send_ad(bot, chat_id):
-    ad = get_random_ad()
-    if not ad:
+    user_data = data['pending'].get(user_id)
+    if not user_data:
         return
-    if ad.get("photo"):
-        bot.send_photo(chat_id, ad["photo"], caption=ad["text"])
-    else:
-        bot.send_message(chat_id, ad["text"])
+
+    if call.data == "ads_edit_text":
+        user_data['step'] = "text"
+        save_data(data)
+        bot.send_message(user_id, "Отправьте новый текст рекламы:")
+
+    elif call.data == "ads_confirm_text":
+        user_data['step'] = "photo"
+        save_data(data)
+        bot.send_message(user_id, "Прикрепите фото (или отправьте /skip если без фото):")
+
+    elif call.data == "ads_send_admin":
+        data['pending'][user_id]['step'] = "wait_admin"
+        save_data(data)
+        bot.send_message(user_id, "Ожидайте одобрения администрации.")
+        # Отправляем админке
+        text = data['pending'][user_id]['text']
+        photo = data['pending'][user_id].get('photo')
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✅ Одобрить", callback_data=f"ads_admin_yes_{user_id}"))
+        markup.add(types.InlineKeyboardButton("❌ Отклонить", callback_data=f"ads_admin_no_{user_id}"))
+        if photo:
+            bot.send_photo(ADMIN_ID, photo, caption=f"Реклама от {call.from_user.first_name}:\n\n{text}", reply_markup=markup)
+        else:
+            bot.send_message(ADMIN_ID, f"Реклама от {call.from_user.first_name}:\n\n{text}", reply_markup=markup)
+
+    elif call.data.startswith("ads_admin_yes_"):
+        uid = call.data.split("_")[-1]
+        udata = data['pending'].pop(uid, None)
+        if udata:
+            data['approved'][uid] = udata
+            save_data(data)
+            bot.send_message(int(uid), "Ваша реклама одобрена! Нажмите кнопку для оплаты.", reply_markup=pay_markup(data))
+        bot.answer_callback_query(call.id, "Одобрено")
+
+    elif call.data.startswith("ads_admin_no_"):
+        uid = call.data.split("_")[-1]
+        udata = data['pending'].pop(uid, None)
+        save_data(data)
+        bot.send_message(int(uid), "Реклама отклонена. Попробуйте изменить текст или фото.")
+        bot.answer_callback_query(call.id, "Отклонено")
+
+# -------------------------
+# Клавиатура оплаты
+# -------------------------
+def pay_markup(data):
+    price = data.get("price", 10)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(f"💫 Оплатить {price} звезд", callback_data="ads_pay"))
+    return markup
+
+# -------------------------
+# Обработка успешной оплаты
+# -------------------------
+def handle_successful(bot, message):
+    user_id = str(message.from_user.id)
+    data = load_data()
+    # реклама уже должна быть в approved
+    if user_id in data.get("approved", {}):
+        # Отправляем себе уведомление, что реклама оплачена
+        bot.send_message(user_id, "Оплата получена! Ваша реклама теперь будет вставляться в ответы бота.")
+        # Всё готово к вставке в остальные плагины
