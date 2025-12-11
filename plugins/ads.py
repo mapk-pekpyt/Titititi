@@ -75,45 +75,51 @@ def handle(bot, message):
         return
     user_id = str(message.from_user.id)
     data = load_data()
-    if user_id not in data.get("pending", {}):
-        return
-    ad = data["pending"][user_id]
+    
+    # если пользователь в процессе создания рекламы
+    if user_id in data.get("pending", {}):
+        ad = data["pending"][user_id]
 
-    # шаг текст
-    if ad["step"] == "text":
-        ad["text"] = message.text
-        ad["step"] = "photo"
-        save_data(data)
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("Добавить фото", callback_data=f"ads_photo_yes_{user_id}"))
-        kb.add(InlineKeyboardButton("Без фото", callback_data=f"ads_photo_no_{user_id}"))
-        bot.send_message(message.chat.id, "Хотите прикрепить фото?", reply_markup=kb)
-        return
-
-    # шаг фото
-    if ad["step"] == "photo":
-        if message.content_type == "photo":
-            ad["photo"] = message.photo[-1].file_id
-        ad["step"] = "count"
-        save_data(data)
-        bot.send_message(message.chat.id, "Введите количество показов рекламы:")
-        return
-
-    # шаг количество
-    if ad["step"] == "count":
-        try:
-            ad["count"] = int(message.text)
-            ad["step"] = "confirm"
+        if ad["step"] == "text":
+            ad["text"] = message.text
+            ad["step"] = "photo"
             save_data(data)
             kb = InlineKeyboardMarkup()
-            kb.add(InlineKeyboardButton("Все верно", callback_data=f"ads_confirm_{user_id}"))
-            kb.add(InlineKeyboardButton("Изменить текст", callback_data=f"ads_change_text_{user_id}"))
-            kb.add(InlineKeyboardButton("Изменить фото", callback_data=f"ads_change_photo_{user_id}"))
-            kb.add(InlineKeyboardButton("Изменить количество", callback_data=f"ads_change_count_{user_id}"))
-            bot.send_message(message.chat.id, f"📋 Проверьте вашу рекламу:\n\n{ad['text']}", reply_markup=kb)
-        except:
-            bot.send_message(message.chat.id, "❌ Введите число показов")
-        return
+            kb.add(InlineKeyboardButton("Добавить фото", callback_data=f"ads_photo_yes_{user_id}"))
+            kb.add(InlineKeyboardButton("Без фото", callback_data=f"ads_photo_no_{user_id}"))
+            bot.send_message(message.chat.id, "Хотите прикрепить фото?", reply_markup=kb)
+            return
+
+        if ad["step"] == "photo":
+            if message.content_type == "photo":
+                ad["photo"] = message.photo[-1].file_id
+            ad["step"] = "count"
+            save_data(data)
+            bot.send_message(message.chat.id, "Введите количество показов рекламы:")
+            return
+
+        if ad["step"] == "count":
+            try:
+                ad["count"] = int(message.text)
+                ad["step"] = "confirm"
+                save_data(data)
+                kb = InlineKeyboardMarkup()
+                kb.add(InlineKeyboardButton("Все верно", callback_data=f"ads_confirm_{user_id}"))
+                kb.add(InlineKeyboardButton("Изменить текст", callback_data=f"ads_change_text_{user_id}"))
+                kb.add(InlineKeyboardButton("Изменить фото", callback_data=f"ads_change_photo_{user_id}"))
+                kb.add(InlineKeyboardButton("Изменить количество", callback_data=f"ads_change_count_{user_id}"))
+                bot.send_message(message.chat.id, f"📋 Проверьте вашу рекламу:\n\n{ad['text']}", reply_markup=kb)
+            except:
+                bot.send_message(message.chat.id, "❌ Введите число показов")
+            return
+    else:
+        # -----------------------------
+        # ОБРАБОТКА ОБЫЧНОГО ТЕКСТА
+        # -----------------------------
+        # Здесь можно обрабатывать любое сообщение от пользователя в ЛС
+        # Например, просто вставляем рекламу после текста:
+        bot.send_message(message.chat.id, f"Вы написали: {message.text}")
+        send_random_ads(bot, message.chat.id)
 
 # -----------------------------
 # Обработка callback кнопок
