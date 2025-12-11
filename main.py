@@ -70,7 +70,7 @@ def ads_callback(call):
 def handle_all_messages(message):
 
     # 1️⃣ если юзер в процессе покупки рекламы
-    data = ads.load_data()
+    data = ads.load()
     user_id = str(message.from_user.id)
     if user_id in data.get("pending", {}):
         ads.handle(bot, message)
