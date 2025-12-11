@@ -28,6 +28,7 @@ PLUGINS = {
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
     top_plugin.handle_my(bot, message)
+    ads.attach_ad(bot, message.chat.id)  # реклама добавляется
 
 # ---------------------------------------------
 # Stars: pre-checkout
@@ -78,8 +79,8 @@ def ads_callback(call):
 # ---------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all_messages(message):
-    text = message.text or ""
-    text_low = text.lower()
+    text = message.text
+    text_low = text.lower() if text else ""
 
     # --------------------------
     # 1️⃣ Рекламные команды
@@ -88,7 +89,7 @@ def handle_all_messages(message):
         ads.handle_buy(bot, message)
         return
     elif text_low.startswith("/priser"):
-        ads.handle_pricer(bot, message)
+        ads.handle_priser(bot, message)
         return
 
     # --------------------------
@@ -103,7 +104,7 @@ def handle_all_messages(message):
     # --------------------------
     # 3️⃣ Команды через /
     # --------------------------
-    cmd_raw = text_low.split()[0]
+    cmd_raw = text_low.split()[0] if text else ""
     if cmd_raw.startswith("/"):
         cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
         plugin_name = TRIGGERS.get(cmd)
@@ -111,6 +112,7 @@ def handle_all_messages(message):
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
+                ads.attach_ad(bot, message.chat.id)
             return
 
     # --------------------------
@@ -122,6 +124,7 @@ def handle_all_messages(message):
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
+                ads.attach_ad(bot, message.chat.id)
             return
 
 # ---------------------------------------------
