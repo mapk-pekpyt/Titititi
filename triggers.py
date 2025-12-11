@@ -59,4 +59,12 @@ TRIGGERS = {
     
     "/say": "say",
     "/say@Sisititibot": "say",
+   
+     #реклама 
+    
+     "/priser": "ads",
+    "/priser@Sisititibot": "/ads",
+    
+     "/buy_ads": "ads",
+    "/buy_ads@Sisititibot": "/ads",
 }
