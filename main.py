@@ -27,17 +27,7 @@ PLUGINS = {
 # ---------------------------------------------
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
-    from plugins import top_plugin
     top_plugin.handle_my(bot, message)
-
-
-# ---------------------------------------------
-# Запуск рекламы /ads
-# ---------------------------------------------
-@bot.message_handler(commands=["ads"])
-def ads_start(message):
-    ads.start(bot, message)
-
 
 # ---------------------------------------------
 # Stars: pre-checkout
@@ -49,13 +39,11 @@ def checkout(pre_checkout_query):
     except Exception as e:
         print("❌ Ошибка pre-checkout:", e)
 
-
 # ---------------------------------------------
 # Stars: успешная оплата
 # ---------------------------------------------
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
-    # обработка всех плагинов
     for name, plugin in PLUGINS.items():
         try:
             if hasattr(plugin, "handle_successful"):
@@ -79,39 +67,37 @@ def payment_handler(message):
     except Exception as e:
         print(f"❌ Ошибка при добавлении звезд в лото: {e}")
 
+# ---------------------------------------------
+# Обработчик callback'ов для рекламы
+# ---------------------------------------------
+@bot.callback_query_handler(func=lambda call: call.data.startswith("ads_"))
+def ads_callback(call):
+    ads.callback(bot, call)
 
 # ------------------------------------------------------------------------
-# Перехват сообщений рекламного процесса
+# Главный обработчик команд и текстовых сообщений
 # ------------------------------------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
-def ads_interceptor(message):
-    user_id = str(message.from_user.id)
-    data = ads.load_data()
-
-    # Если человек внутри рекламного процесса → отправляем в ads.handle
-    if user_id in data.get("pending", {}):
-        ads.handle(bot, message)
-        return
-
-    # Иначе — обычная логика
-    return handle_all_messages(message)
-
-
-# ------------------------------------------------------------------------
-# Главный обработчик команд + текстовых команд
-# ------------------------------------------------------------------------
 def handle_all_messages(message):
     text = message.text
     if not text:
         return
 
-    text_low = text.lower().strip()
+    text_low = text.lower()
+    user_id = str(message.from_user.id)
 
     # --------------------------
-    # 1️⃣ Если команда начинается с /cmd
+    # Проверка на режим рекламы
+    # --------------------------
+    data = ads.load_data()
+    if user_id in data.get("pending", {}):
+        ads.handle(bot, message)
+        return
+
+    # --------------------------
+    # 1️⃣ Команды с /
     # --------------------------
     cmd_raw = text_low.split()[0]
-
     if cmd_raw.startswith("/"):
         if "@" in cmd_raw:
             cmd = cmd_raw.split("@")[0]
@@ -126,22 +112,20 @@ def handle_all_messages(message):
             return
 
     # --------------------------
-    # 2️⃣ Текстовые команды без слэша
+    # 2️⃣ Текстовые команды без /
     # --------------------------
-    first_word = text_low.split()[0]  # анализируем первое слово
     for trigger, plugin_name in TRIGGERS.items():
-        pure_trigger = trigger.replace("/", "").lower()
-
-        # пример: pure_trigger="sisi", first_word="сиськи" → ок
-        if pure_trigger in first_word:
+        trig = trigger.replace("/", "").lower()
+        if text_low.startswith(trig):
             plugin = PLUGINS.get(plugin_name)
             if plugin and hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
             return
 
-    # Если команды нет – игнорируем
+    # --------------------------
+    # 3️⃣ Нет команд → ничего
+    # --------------------------
     return
-
 
 # ---------------------------------------------
 # Старт
