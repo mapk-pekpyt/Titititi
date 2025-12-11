@@ -105,10 +105,56 @@ def global_callback_handler(call):
 
 
 # ---------------------------------------------
-# Общий обработчик всех плагинов
+# Общий обработчик всех плагинов (текст + фото)
 # ---------------------------------------------
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(content_types=["text", "photo"])
 def handle_all_messages(message):
+    # сначала проверяем, есть ли фото
+    if message.content_type == "photo":
+        # пробуем передать фото в плагины
+        for name, plugin in PLUGINS.items():
+            if hasattr(plugin, "handle"):
+                try:
+                    plugin.handle(bot, message)
+                except Exception as e:
+                    print(f"❗ Ошибка в плагине {name}: {e}")
+        # после обработки показываем рекламу
+        try:
+            ads.send_random_ads(bot, message.chat.id)
+        except Exception as e:
+            print("Ошибка показа рекламы:", e)
+        return
+
+    # если текст
+    text = message.text
+    if not text:
+        return
+
+    cmd_raw = text.split()[0].lower()
+    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+
+    plugin_name = TRIGGERS.get(cmd)
+    if plugin_name:
+        plugin = PLUGINS.get(plugin_name)
+        if plugin and hasattr(plugin, "handle"):
+            try:
+                plugin.handle(bot, message)
+            except Exception as e:
+                print(f"❗ Ошибка в плагине {plugin_name}: {e}")
+    else:
+        # если команда не из триггеров, пробуем передать текст обычным плагинам
+        for name, plugin in PLUGINS.items():
+            if hasattr(plugin, "handle"):
+                try:
+                    plugin.handle(bot, message)
+                except Exception as e:
+                    print(f"❗ Ошибка в плагине {name}: {e}")
+
+    # показываем рекламу
+    try:
+        ads.send_random_ads(bot, message.chat.id)
+    except Exception as e:
+        print("Ошибка показа рекламы:", e)
     text = message.text
     if not text:
         return
