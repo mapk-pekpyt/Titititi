@@ -3,36 +3,36 @@ import os
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
 
 DATA_FILE = "plugins/ads_data.json"
-ADMIN_ID = 5791171535  # твой Telegram ID
-PRICE_PER_SHOW = 1  # по умолчанию цена за 1 показ
+ADMIN_ID = 5791171535
+PRICE_PER_SHOW = 1  # можно изменить через /priser
 
-# Загрузка/сохранение данных
-def load_ads():
+# Загрузка/сохранение
+def load():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {"pending": {}, "approved": [], "price": PRICE_PER_SHOW}
 
-def save_ads(data):
+def save(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 # -----------------------------
-# Команды
+# Команды для админа
 # -----------------------------
 def handle_priser(bot, message):
     if message.from_user.id != ADMIN_ID:
         bot.send_message(message.chat.id, "❌ Только админ может устанавливать цену!")
         return
     parts = message.text.split()
+    data = load()
     if len(parts) < 2:
-        bot.send_message(message.chat.id, f"Текущая цена за 1 показ: {load_ads()['price']} звезд")
+        bot.send_message(message.chat.id, f"Текущая цена за 1 показ: {data.get('price', PRICE_PER_SHOW)} звезд")
         return
     try:
         price = float(parts[1])
-        data = load_ads()
         data['price'] = price
-        save_ads(data)
+        save(data)
         bot.send_message(message.chat.id, f"✅ Цена за 1 показ установлена: {price} звезд")
     except:
         bot.send_message(message.chat.id, "❌ Неверное число")
@@ -40,33 +40,36 @@ def handle_priser(bot, message):
 def handle_all(bot, message):
     if message.from_user.id != ADMIN_ID:
         return
-    data = load_ads()
+    data = load()
     text = "📋 Текущие рекламные задачи:\n\n"
     for uid, ad in data.get("pending", {}).items():
-        text += f"Пользователь {ad['user_name']}:\nТекст: {ad['text']}\nФото: {'есть' if ad.get('photo') else 'нет'}\nОсталось показов: {ad.get('count',0)}\n\n"
+        text += f"Пользователь {ad['user_name']}:\nТекст: {ad.get('text','')}\nФото: {'есть' if ad.get('photo') else 'нет'}\nОсталось показов: {ad.get('count',0)}\n\n"
     if not data.get("pending"):
         text += "Задач нет."
     bot.send_message(message.chat.id, text)
 
+# -----------------------------
+# Команда /buy_ads
+# -----------------------------
 def handle_buy(bot, message):
     if message.chat.type != "private":
         bot.send_message(message.chat.id, "❌ Реклама работает только в личных сообщениях бота!")
         return
     user_id = str(message.from_user.id)
-    data = load_ads()
+    data = load()
     data["pending"][user_id] = {"step": "text", "user_name": message.from_user.username or message.from_user.first_name}
-    save_ads(data)
+    save(data)
     price = data.get("price", PRICE_PER_SHOW)
     bot.send_message(message.chat.id, f"💰 Стоимость 1 показа: {price} звезд\n\nВведите текст вашей рекламы:")
 
 # -----------------------------
-# Обработка сообщений от пользователя
+# Обработка сообщений
 # -----------------------------
 def handle(bot, message):
     if message.chat.type != "private":
         return
     user_id = str(message.from_user.id)
-    data = load_ads()
+    data = load()
     if user_id not in data.get("pending", {}):
         return
     ad = data["pending"][user_id]
@@ -74,7 +77,7 @@ def handle(bot, message):
     if ad["step"] == "text":
         ad["text"] = message.text
         ad["step"] = "photo"
-        save_ads(data)
+        save(data)
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("Добавить фото", callback_data=f"ads_photo_yes_{user_id}"))
         kb.add(InlineKeyboardButton("Без фото", callback_data=f"ads_photo_no_{user_id}"))
@@ -85,7 +88,7 @@ def handle(bot, message):
         if message.content_type == "photo":
             ad["photo"] = message.photo[-1].file_id
         ad["step"] = "count"
-        save_ads(data)
+        save(data)
         bot.send_message(message.chat.id, "Введите количество показов рекламы:")
         return
 
@@ -93,7 +96,7 @@ def handle(bot, message):
         try:
             ad["count"] = int(message.text)
             ad["step"] = "confirm"
-            save_ads(data)
+            save(data)
             kb = InlineKeyboardMarkup()
             kb.add(InlineKeyboardButton("Все верно", callback_data=f"ads_confirm_{user_id}"))
             kb.add(InlineKeyboardButton("Изменить текст", callback_data=f"ads_change_text_{user_id}"))
@@ -105,31 +108,30 @@ def handle(bot, message):
         return
 
 # -----------------------------
-# Callback
+# Callback кнопок
 # -----------------------------
 def callback(bot, call):
-    data = load_ads()
+    data = load()
     parts = call.data.split("_")
     action = parts[1]
     user_id = parts[-1]
-    if user_id not in data["pending"]:
+    if user_id not in data.get("pending", {}):
         bot.answer_callback_query(call.id, "Ошибка!")
         return
     ad = data["pending"][user_id]
 
-    if action == "confirm" and call.from_user.id == int(ADMIN_ID):
-        # Одобрение рекламы админом
-        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    # Убираем кнопки
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+
+    if action == "confirm" and call.from_user.id == ADMIN_ID:
         approved_ad = ad.copy()
         data["approved"].append(approved_ad)
         del data["pending"][user_id]
-        save_ads(data)
-        # Если цена 0 — сразу публикуем
+        save(data)
         price = data.get("price", PRICE_PER_SHOW)
         if price <= 0:
             bot.send_message(int(user_id), "✅ Ваша реклама бесплатно опубликована!")
         else:
-            # Создаем платеж
             bot.send_invoice(
                 chat_id=int(user_id),
                 title="Оплата рекламы",
@@ -143,7 +145,6 @@ def callback(bot, call):
         return
 
     if action.startswith("change"):
-        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
         if action.endswith("text"):
             ad["step"] = "text"
             bot.send_message(int(user_id), "Введите новый текст рекламы:")
@@ -156,7 +157,7 @@ def callback(bot, call):
         elif action.endswith("count"):
             ad["step"] = "count"
             bot.send_message(int(user_id), "Введите новое количество показов:")
-        save_ads(data)
+        save(data)
         return
 
     if action == "photo":
@@ -166,23 +167,21 @@ def callback(bot, call):
         else:
             ad["step"] = "count"
             bot.send_message(int(user_id), "Введите количество показов рекламы:")
-        save_ads(data)
+        save(data)
 
 # -----------------------------
-# Прикрепление рекламы к сообщениям
+# Прикрепление рекламы
 # -----------------------------
 def attach_ad(bot, chat_id):
-    data = load_ads()
+    data = load()
     if not data.get("approved"):
         return
     ad = data["approved"].pop(0)
-    msg = ad["text"]
     if ad.get("photo"):
-        bot.send_photo(chat_id, ad["photo"], caption=msg)
+        bot.send_photo(chat_id, ad["photo"], caption=ad["text"])
     else:
-        bot.send_message(chat_id, msg)
-    # Уменьшаем счётчик показов
+        bot.send_message(chat_id, ad["text"])
     ad["count"] -= 1
     if ad["count"] > 0:
         data["approved"].append(ad)
-    save_ads(data)
+    save(data)
