@@ -28,7 +28,8 @@ PLUGINS = {
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
     top_plugin.handle_my(bot, message)
-    ads.attach_ad(bot, message.chat.id)  # реклама добавляется
+    ads.attach_ad(bot, message.chat.id)  # вставляем рекламу после ответа
+
 
 # ---------------------------------------------
 # Stars: pre-checkout
@@ -39,6 +40,7 @@ def checkout(pre_checkout_query):
         bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
     except Exception as e:
         print("❌ Ошибка pre-checkout:", e)
+
 
 # ---------------------------------------------
 # Stars: успешная оплата
@@ -52,7 +54,6 @@ def payment_handler(message):
         except Exception as e:
             print(f"❌ Ошибка в обработке оплаты у {name}: {e}")
 
-    # Лото обрабатываем отдельно
     try:
         stars = 0
         if hasattr(message, "successful_payment"):
@@ -67,46 +68,55 @@ def payment_handler(message):
     except Exception as e:
         print(f"❌ Ошибка при добавлении звезд в лото: {e}")
 
+
 # ---------------------------------------------
-# Callback для рекламы
+# Callback для рекламы (только ads)
 # ---------------------------------------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("ads_"))
 def ads_callback(call):
     ads.callback(bot, call)
 
+
 # ---------------------------------------------
-# Главный обработчик всех сообщений
+# Главный обработчик
 # ---------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all_messages(message):
+    chat_type = message.chat.type
+
     text = message.text
     text_low = text.lower() if text else ""
 
-    # --------------------------
-    # 1️⃣ Рекламные команды
-    # --------------------------
-    if text_low.startswith("/buy_ads"):
-        ads.handle_buy(bot, message)
-        return
-    elif text_low.startswith("/priser"):
-        ads.handle_priser(bot, message)
-        return
-
-    # --------------------------
-    # 2️⃣ Проверка на пользователей в процессе рекламы
-    # --------------------------
     user_id = str(message.from_user.id)
-    data = ads.load_data()
-    if user_id in data.get("pending", {}):
-        ads.handle(bot, message)
-        return
 
-    # --------------------------
-    # 3️⃣ Команды через /
-    # --------------------------
-    cmd_raw = text_low.split()[0] if text else ""
-    if cmd_raw.startswith("/"):
+    # -------------------------------------
+    # 0️⃣ Реклама работает ТОЛЬКО В ЛС
+    # -------------------------------------
+    if chat_type == "private":
+        data = ads.load()  # ФИКС: тут было load_data()
+
+        # Если юзер в процессе создания рекламы — отправляем в ads.handle()
+        if user_id in data.get("pending", {}):
+            ads.handle(bot, message)
+            return
+
+        # Команда запуска покупки рекламы
+        if text_low.startswith("/buy_ads"):
+            ads.handle_buy(bot, message)
+            return
+
+        # Установка цены
+        if text_low.startswith("/priser"):
+            ads.handle_priser(bot, message)
+            return
+
+    # -------------------------------------
+    # 1️⃣ Команды через /
+    # -------------------------------------
+    if text_low and text_low.startswith("/"):
+        cmd_raw = text_low.split()[0]
         cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+
         plugin_name = TRIGGERS.get(cmd)
         if plugin_name:
             plugin = PLUGINS.get(plugin_name)
@@ -115,17 +125,19 @@ def handle_all_messages(message):
                 ads.attach_ad(bot, message.chat.id)
             return
 
-    # --------------------------
-    # 4️⃣ Текстовые команды без /
-    # --------------------------
-    for trigger, plugin_name in TRIGGERS.items():
-        trig = trigger.replace("/", "").lower()
-        if text_low.startswith(trig):
-            plugin = PLUGINS.get(plugin_name)
-            if plugin and hasattr(plugin, "handle"):
-                plugin.handle(bot, message)
-                ads.attach_ad(bot, message.chat.id)
-            return
+    # -------------------------------------
+    # 2️⃣ Текстовые команды без /
+    # -------------------------------------
+    if text_low:
+        for trigger, plugin_name in TRIGGERS.items():
+            trig = trigger.replace("/", "").lower()
+            if text_low.startswith(trig):
+                plugin = PLUGINS.get(plugin_name)
+                if plugin and hasattr(plugin, "handle"):
+                    plugin.handle(bot, message)
+                    ads.attach_ad(bot, message.chat.id)
+                return
+
 
 # ---------------------------------------------
 # Старт
