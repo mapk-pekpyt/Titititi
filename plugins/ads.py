@@ -3,313 +3,291 @@ import os
 from telebot import types
 
 DATA_FILE = "plugins/ads_data.json"
-ADMIN_ID = 5791171535   # ← твой настоящий Telegram ID
 
-# -----------------------------
-# Загрузка / Сохранение
-# -----------------------------
+ADMIN_ID = 5791171535   # твой id
+
+
+# -----------------------------------------
+# Работа с файлом
+# -----------------------------------------
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"ads": [], "pending": {}, "price": 5, "counter": 0}
+        return {"pending": {}, "approved": [], "active": []}
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-# -----------------------------
-# Команда /priser — изменить цену
-# -----------------------------
-def handle_price(bot, msg):
-    parts = msg.text.split()
-    data = load_data()
+# -----------------------------------------
+# Цена рекламы (меняем через /priser)
+# -----------------------------------------
+PRICE_PER_MESSAGE = 3  # цена за 1 показ
 
-    if msg.from_user.id != ADMIN_ID:
-        bot.reply_to(msg, "У вас нет доступа.")
+
+# -----------------------------------------
+# /priser — только админ меняет цену
+# -----------------------------------------
+def handle_priser(bot, message):
+    global PRICE_PER_MESSAGE
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "⛔ У вас нет доступа.")
         return
 
-    if len(parts) == 2 and parts[1].isdigit():
-        data["price"] = int(parts[1])
-        save_data(data)
-        bot.reply_to(msg, f"Цена успешно установлена: {data['price']}⭐ за 1 рассылку.")
-    else:
-        bot.reply_to(msg, f"Текущая цена: {data['price']}⭐.\nИспользование: /priser 10")
+    try:
+        new_price = int(message.text.split()[1])
+        PRICE_PER_MESSAGE = new_price
+        bot.reply_to(message, f"💰 Цена успешно изменена: {new_price}⭐ за показ.")
+    except:
+        bot.reply_to(message, "Использование: /priser 5")
 
 
-# -----------------------------
-# Начало покупки рекламы /buy_ads
-# -----------------------------
-def handle_buy(bot, msg):
+# -----------------------------------------
+# /ads — запуск процесса
+# -----------------------------------------
+def start(bot, message):
+    user = str(message.from_user.id)
     data = load_data()
 
-    data["pending"][str(msg.from_user.id)] = {
-        "stage": "wait_text",
+    data["pending"][user] = {
+        "step": "text",
         "text": None,
         "photo": None,
-        "count": 1,
+        "count": 1
     }
+
     save_data(data)
 
-    bot.send_message(msg.chat.id, "Отправьте текст вашей рекламы.")
+    bot.send_message(message.chat.id, "✍️ Отправьте текст вашей рекламы.")
 
 
-# -----------------------------
-# Главное сообщение после текста
-# -----------------------------
-def ask_confirm(bot, user_id, chat_id):
-    data = load_data()
-    entry = data["pending"][str(user_id)]
-    price = entry["count"] * data["price"]
-
-    kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton("Продолжить", callback_data="ads_continue"),
-        types.InlineKeyboardButton("Изменить число", callback_data="ads_change_count"),
-        types.InlineKeyboardButton("Изменить текст", callback_data="ads_change_text"),
-    )
-
-    bot.send_message(
-        chat_id,
-        f"Цена за {entry['count']} рассылок: {price} ⭐\n\nПродолжить?",
-        reply_markup=kb
-    )
-
-
-# -----------------------------
-# Обработка сообщений (текст/фото)
-# -----------------------------
-def handle(bot, msg):
-    user_id = str(msg.from_user.id)
+# -----------------------------------------
+# Основной обработчик etapas
+# -----------------------------------------
+def handle(bot, message):
+    user = str(message.from_user.id)
     data = load_data()
 
-    if user_id not in data["pending"]:
-        return  # это не реклама
-
-    entry = data["pending"][user_id]
-
-    # -----------------------------
-    # 1. Получение текста
-    # -----------------------------
-    if entry["stage"] == "wait_text":
-        entry["text"] = msg.text
-        entry["stage"] = "confirm_main"
-        save_data(data)
-        ask_confirm(bot, msg.from_user.id, msg.chat.id)
+    if user not in data["pending"]:
         return
 
-    # -----------------------------
-    # 2. Изменение текста
-    # -----------------------------
-    if entry["stage"] == "change_text":
-        entry["text"] = msg.text
-        entry["stage"] = "confirm_main"
+    obj = data["pending"][user]
+    step = obj["step"]
+
+    # ------------------------------------------------
+    # Этап 1: текст рекламы
+    # ------------------------------------------------
+    if step == "text":
+        obj["text"] = message.text
+        obj["step"] = "review"
+
+        price = obj["count"] * PRICE_PER_MESSAGE
+
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("Продолжить", callback_data=f"ads_continue_{user}"))
+        kb.add(types.InlineKeyboardButton("Изменить текст", callback_data=f"ads_change_text_{user}"))
+        kb.add(types.InlineKeyboardButton("Изменить количество", callback_data=f"ads_change_count_{user}"))
+
+        bot.send_message(
+            message.chat.id,
+            f"💬 Текст получен!\n"
+            f"Количество показов: {obj['count']}\n"
+            f"Итоговая цена: {price}⭐\n\n"
+            "Что хотите сделать?",
+            reply_markup=kb
+        )
+
         save_data(data)
-        ask_confirm(bot, msg.from_user.id, msg.chat.id)
         return
 
-    # -----------------------------
-    # 3. Изменение количества
-    # -----------------------------
-    if entry["stage"] == "change_count":
-        if msg.text.isdigit() and int(msg.text) > 0:
-            entry["count"] = int(msg.text)
-            entry["stage"] = "confirm_main"
+    # ------------------------------------------------
+    # Этап 2: изменение количества
+    # ------------------------------------------------
+    if step == "count":
+        try:
+            new_count = int(message.text)
+            if new_count < 1:
+                raise ValueError
+            obj["count"] = new_count
+            obj["step"] = "review"
             save_data(data)
-            ask_confirm(bot, msg.from_user.id, msg.chat.id)
-        else:
-            bot.reply_to(msg, "Введите число (например 5).")
+
+            price = obj["count"] * PRICE_PER_MESSAGE
+
+            kb = types.InlineKeyboardMarkup()
+            kb.add(types.InlineKeyboardButton("Продолжить", callback_data=f"ads_continue_{user}"))
+            kb.add(types.InlineKeyboardButton("Изменить текст", callback_data=f"ads_change_text_{user}"))
+            kb.add(types.InlineKeyboardButton("Изменить количество", callback_data=f"ads_change_count_{user}"))
+
+            bot.send_message(
+                message.chat.id,
+                f"🔢 Новое количество: {obj['count']}\nЦена: {price}⭐",
+                reply_markup=kb
+            )
+        except:
+            bot.send_message(message.chat.id, "Введите число, например: 5")
         return
 
-    # -----------------------------
-    # 4. Ожидание фото
-    # -----------------------------
-    if entry["stage"] == "wait_photo":
-        if not msg.photo:
-            bot.reply_to(msg, "Пришлите фото.")
+    # ------------------------------------------------
+    # Этап 3: фото
+    # ------------------------------------------------
+    if step == "photo":
+        if not message.photo:
+            bot.send_message(message.chat.id, "Пришлите фото.")
             return
 
-        entry["photo"] = msg.photo[-1].file_id
-        entry["stage"] = "wait_confirm"
+        obj["photo"] = message.photo[-1].file_id
+        obj["step"] = "confirm"
         save_data(data)
 
         kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("Подтвердить", callback_data="ads_final_confirm"))
+        kb.add(types.InlineKeyboardButton("Подтвердить", callback_data=f"ads_confirm_{user}"))
 
-        bot.send_message(msg.chat.id, "Фото получено. Подтвердить?", reply_markup=kb)
+        bot.send_photo(
+            message.chat.id,
+            obj["photo"],
+            caption="📸 Фото получено. Подтвердите отправку.",
+            reply_markup=kb
+        )
         return
 
 
-# -----------------------------
-# Обработка callback кнопок
-# -----------------------------
-def handle_callback(bot, call):
-    user_id = str(call.from_user.id)
+# -----------------------------------------
+# Обработка кнопок
+# -----------------------------------------
+def callback(bot, call):
     data = load_data()
+    user = call.from_user.id
+    user_s = str(user)
 
-    # --- Кнопки не рекламы ---
-    if not call.data.startswith("ads_") and not call.data.startswith("adm_"):
+    if user_s not in data["pending"]:
         return
 
-    # --- Если реклама ---
-    if user_id in data["pending"]:
-        entry = data["pending"][user_id]
+    obj = data["pending"][user_s]
 
-        # Продолжить → запросить фото
-        if call.data == "ads_continue":
-            entry["stage"] = "wait_photo"
-            save_data(data)
-            bot.edit_message_text("Отправьте фото для рекламы.", call.message.chat.id, call.message.message_id)
-            return
-
-        # Изменить число рассылок
-        if call.data == "ads_change_count":
-            entry["stage"] = "change_count"
-            save_data(data)
-            bot.edit_message_text("Введите новое количество рассылок:", call.message.chat.id, call.message.message_id)
-            return
-
-        # Изменить текст
-        if call.data == "ads_change_text":
-            entry["stage"] = "change_text"
-            save_data(data)
-            bot.edit_message_text("Введите новый текст рекламы:", call.message.chat.id, call.message.message_id)
-            return
-
-        # Пользователь подтвердил фото → ждём админа
-        if call.data == "ads_final_confirm":
-            bot.edit_message_text("Ожидайте одобрения администрации.", call.message.chat.id, call.message.message_id)
-
-            # отправляем админу
-            kb = types.InlineKeyboardMarkup()
-            kb.add(
-                types.InlineKeyboardButton("Одобрить", callback_data=f"adm_yes_{user_id}"),
-                types.InlineKeyboardButton("Отклонить", callback_data=f"adm_no_{user_id}")
-            )
-
-            bot.send_photo(
-                ADMIN_ID,
-                entry["photo"],
-                caption=f"Реклама от {user_id}:\n\n{entry['text']}",
-                reply_markup=kb
-            )
-            entry["stage"] = "waiting_admin"
-            save_data(data)
-            return
-
-    # -----------------------------------
-    #       А Д М И Н О В Ы Е  К Н О П К И
-    # -----------------------------------
-    if str(call.from_user.id) == str(ADMIN_ID):
-
-        if call.data.startswith("adm_yes_"):
-            uid = call.data.split("_")[2]
-            entry = data["pending"][uid]
-
-            price = entry["count"] * data["price"]
-
-            # Отправляем пользователю оплату
-            kb = types.InlineKeyboardMarkup()
-            kb.add(types.InlineKeyboardButton("Оплатить", pay=True))
-
-            bot.send_message(
-                uid,
-                f"Ваша реклама одобрена!\nСтоимость: {price} ⭐\nНажмите кнопку ниже для оплаты:",
-                reply_markup=kb
-            )
-
-            entry["stage"] = "wait_payment"
-            save_data(data)
-
-            bot.edit_message_caption(
-                caption="Одобрено.",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id
-            )
-            return
-
-        if call.data.startswith("adm_no_"):
-            uid = call.data.split("_")[2]
-
-            bot.send_message(ADMIN_ID, "Введите причину отказа:")
-            data["pending"][uid]["stage"] = "wait_admin_comment"
-            save_data(data)
-            data["pending"][uid]["admin_msg"] = call.message.message_id
-            save_data(data)
-            return
-
-
-# -------------------------------------
-# Админ вводит комментарий отказа
-# -------------------------------------
-def handle_admin_comment(bot, msg):
-    data = load_data()
-    text = msg.text
-
-    # ищем кому админ отвечает
-    for uid, entry in data["pending"].items():
-        if entry.get("stage") == "wait_admin_comment":
-            bot.send_message(uid, f"Ваша реклама отклонена.\nПричина: {text}")
-            entry["stage"] = "finished"
-            save_data(data)
-            return
-
-
-# -------------------------------------
-# После оплаты
-# -------------------------------------
-def handle_successful(bot, msg):
-    user_id = str(msg.from_user.id)
-    data = load_data()
-
-    if user_id not in data["pending"]:
+    # Продолжить → ждём фото
+    if call.data == f"ads_continue_{user_s}":
+        obj["step"] = "photo"
+        save_data(data)
+        bot.edit_message_text("📸 Пришлите фото для рекламы.", call.message.chat.id, call.message.message_id)
         return
 
-    entry = data["pending"][user_id]
-
-    if entry["stage"] != "wait_payment":
+    # Меняем текст
+    if call.data == f"ads_change_text_{user_s}":
+        obj["step"] = "text"
+        save_data(data)
+        bot.edit_message_text("✍️ Введите новый текст:", call.message.chat.id, call.message.message_id)
         return
 
-    # Переносим в активные рекламы
-    ad = {
-        "text": entry["text"],
-        "photo": entry["photo"],
-        "remaining": entry["count"]
-    }
-    data["ads"].append(ad)
-
-    entry["stage"] = "finished"
-    save_data(data)
-
-    bot.send_message(msg.chat.id, "Оплата получена! Ваша реклама активирована.")
-
-
-# -------------------------------------
-# Показ реклам при каждом сообщении
-# -------------------------------------
-def send_random_ads(bot, chat_id):
-    data = load_data()
-    ads_list = data["ads"]
-
-    if not ads_list:
+    # Меняем количество
+    if call.data == f"ads_change_count_{user_s}":
+        obj["step"] = "count"
+        save_data(data)
+        bot.edit_message_text("🔢 Введите количество показов:", call.message.chat.id, call.message.message_id)
         return
 
-    idx = data.get("counter", 0)
-
-    if idx >= len(ads_list):
-        idx = 0
-
-    ad = ads_list[idx]
-
-    # выбираем следующую
-    data["counter"] = idx + 1
-    save_data(data)
-
-    # уменьшаем оставшиеся показы
-    ad["remaining"] -= 1
-    if ad["remaining"] <= 0:
-        ads_list.pop(idx)
+    # Подтверждение → отправка админу
+    if call.data == f"ads_confirm_{user_s}":
+        obj["step"] = "wait_admin"
         save_data(data)
 
-    bot.send_photo(chat_id, ad["photo"], caption=ad["text"])
+        kb = types.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("Одобрить", callback_data=f"ads_admin_ok_{user_s}"))
+        kb.add(types.InlineKeyboardButton("Отклонить", callback_data=f"ads_admin_no_{user_s}"))
+
+        bot.send_message(ADMIN_ID, f"🔥 Новая реклама от {user_s}:\n\n{obj['text']}")
+        bot.send_photo(ADMIN_ID, obj["photo"], reply_markup=kb)
+
+        bot.edit_message_caption(
+            caption="⏳ Ожидайте одобрения администратора…",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+        return
+
+    # -----------------------------------------
+    # Админ: одобрить
+    # -----------------------------------------
+    if call.data.startswith("ads_admin_ok_"):
+        target = call.data.split("_")[-1]
+        t = data["pending"].get(target)
+        if not t:
+            return
+
+        # Цена
+        price = t["count"] * PRICE_PER_MESSAGE
+
+        # Отправляем пользователю оплату
+        invoice = types.LabeledPrice(label="Реклама", amount=price * 100)
+
+        bot.send_invoice(
+            chat_id=int(target),
+            title="Реклама",
+            description="Оплатите чтобы активировать вашу рекламу.",
+            invoice_payload=f"ads_pay_{target}",
+            provider_token="",  # Stars НЕ требует токена
+            currency="XTR",
+            prices=[invoice]
+        )
+
+        bot.edit_message_caption(
+            caption="✔️ Одобрено и отправлено пользователю.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id
+        )
+
+        save_data(data)
+        return
+
+    # -----------------------------------------
+    # Админ: отклонить
+    # -----------------------------------------
+    if call.data.startswith("ads_admin_no_"):
+        target = call.data.split("_")[-1]
+
+        bot.send_message(ADMIN_ID, "Введите причину отказа:")
+        data["pending"][target]["step"] = "admin_reason"
+        save_data(data)
+        return
+
+
+# -----------------------------------------
+# Обработка успешной оплаты рекламы
+# -----------------------------------------
+def handle_successful(bot, message):
+    payload = message.successful_payment.invoice_payload
+    if not payload.startswith("ads_pay_"):
+        return
+
+    user = payload.split("_")[-1]
+    data = load_data()
+
+    obj = data["pending"].get(user)
+    if not obj:
+        return
+
+    # Добавляем в активные рекламы
+    data["active"].append(obj)
+    del data["pending"][user]
+    save_data(data)
+
+    bot.send_message(int(user), "🎉 Ваша реклама активирована!")
+    return
+
+
+# -----------------------------------------
+# Отдать одну рекламу (циклично)
+# -----------------------------------------
+def get_next_ad():
+    data = load_data()
+    if not data["active"]:
+        return None
+
+    # циклический перебор
+    ad = data["active"].pop(0)
+    data["active"].append(ad)
+    save_data(data)
+    return ad
