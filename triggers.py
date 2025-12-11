@@ -1,4 +1,6 @@
 TRIGGERS = {
+    "/start": "start",
+    
     # ==== SISI ====
     "/sisi": "sisi",
     "/sisi@Sisititibot": "sisi",
