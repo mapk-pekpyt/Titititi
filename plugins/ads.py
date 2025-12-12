@@ -1,210 +1,254 @@
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import json
+import os
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
 
-bot = None
+DATA_FILE = "plugins/ads_data.json"
 
-ADMIN_CHAT = -5037660983
-base_price = 1.0
-
-ads_orders = {}
-waiting_new_price = {}
+ADMIN_CHAT = -5037660983     # Админский чат
+BASE_PRICE = 1.0             # цена за 1 показ
+WAIT_PRICE = {}              # ожидание цены от админа
 
 
-def init_plugin(b):
-    global bot
-    bot = b
-    print("[ADS] Plugin loaded!")
+def load():
+    if not os.path.exists(DATA_FILE):
+        return {"pending": {}, "approved": {}}
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-    ###############################
-    # /priser — ТОЛЬКО В АДМИН ЧАТЕ
-    ###############################
-    @bot.message_handler(commands=["priser"])
-    def set_price(message):
-        global base_price
-        if message.chat.id != ADMIN_CHAT:
-            bot.reply_to(message, "Команда доступна только в админ-чате.")
+
+def save(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+# =====================================================
+# /buy_ads  → пользователь создает заявку
+# =====================================================
+def handle_buy(bot, msg):
+    uid = str(msg.from_user.id)
+    data = load()
+
+    data["pending"][uid] = {
+        "step": "photo",
+        "user": msg.from_user.username,
+    }
+    save(data)
+
+    bot.send_message(uid, "📸 Отправьте фото вашей рекламы:")
+
+
+# =====================================================
+# Главная обработка сообщений
+# =====================================================
+def handle(bot, msg):
+    uid = str(msg.from_user.id)
+    data = load()
+
+    if uid not in data["pending"]:
+        return
+
+    ad = data["pending"][uid]
+
+    # ----------
+    # Фото
+    # ----------
+    if ad["step"] == "photo":
+        if msg.content_type != "photo":
+            bot.send_message(uid, "Отправьте фото!")
             return
 
-        parts = message.text.split()
-        if len(parts) != 2:
-            bot.reply_to(message, "Использование:\n/priser 1.5")
-            return
-
-        try:
-            base_price = float(parts[1])
-            bot.reply_to(message, f"Новая цена за 1 показ: {base_price} Stars")
-        except:
-            bot.reply_to(message, "Введите корректное число.")
-
-    ###############################
-    # /buy_ads
-    ###############################
-    @bot.message_handler(commands=["buy_ads"])
-    def buy_ads(message):
-        uid = message.from_user.id
-        ads_orders[uid] = {"step": "wait_photo"}
-        bot.send_message(uid, "📸 Отправьте фото для рекламы:")
-
-    ###############################
-    # Приём фото
-    ###############################
-    @bot.message_handler(content_types=["photo"])
-    def ads_photo(message):
-        uid = message.from_user.id
-        if uid not in ads_orders or ads_orders[uid]["step"] != "wait_photo":
-            return
-
-        ads_orders[uid]["photo"] = message.photo[-1].file_id
-        ads_orders[uid]["step"] = "wait_count"
+        ad["photo"] = msg.photo[-1].file_id
+        ad["step"] = "count"
+        save(data)
         bot.send_message(uid, "🔢 Введите количество показов:")
+        return
 
-    ###############################
-    # Количество показов
-    ###############################
-    @bot.message_handler(func=lambda m: m.from_user.id in ads_orders and ads_orders[m.from_user.id]["step"] == "wait_count")
-    def ads_count(message):
-        uid = message.from_user.id
+    # ----------
+    # Количество
+    # ----------
+    if ad["step"] == "count":
         try:
-            count = int(message.text)
+            count = int(msg.text)
             if count <= 0:
                 raise Exception
         except:
-            bot.send_message(uid, "Введите целое число больше нуля.")
+            bot.send_message(uid, "Введите целое число.")
             return
 
-        ads_orders[uid]["count"] = count
-
-        approx = base_price * count
-        ads_orders[uid]["approx_price"] = approx
-        ads_orders[uid]["step"] = "preview"
+        ad["count"] = count
+        ad["approx"] = BASE_PRICE * count
+        ad["step"] = "preview"
+        save(data)
 
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("✅ Все верно", callback_data=f"confirm_{uid}"))
-        kb.add(InlineKeyboardButton("📸 Изменить фото", callback_data=f"changephoto_{uid}"))
-        kb.add(InlineKeyboardButton("🔢 Изменить количество", callback_data=f"changecount_{uid}"))
-        kb.add(InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_{uid}"))
+        kb.add(InlineKeyboardButton("✅ Всё верно", callback_data=f"ads_confirm_{uid}"))
+        kb.add(InlineKeyboardButton("📸 Изменить фото", callback_data=f"ads_change_photo_{uid}"))
+        kb.add(InlineKeyboardButton("🔢 Изменить количество", callback_data=f"ads_change_count_{uid}"))
+        kb.add(InlineKeyboardButton("❌ Отменить", callback_data=f"ads_cancel_{uid}"))
 
         bot.send_photo(
             uid,
-            ads_orders[uid]["photo"],
+            ad["photo"],
             caption=(
-                f"📋 Предпросмотр рекламы:\n"
+                f"📋 Предпросмотр:\n"
                 f"Показы: {count}\n"
-                f"💰 Примерная стоимость: {approx} Stars\n\n"
-                "Проверьте данные."
+                f"💰 Примерная стоимость: {ad['approx']} Stars"
             ),
             reply_markup=kb
         )
+        return
 
-    ###############################################
-    # CALLBACKS
-    ###############################################
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("cancel_"))
-    def cancel(call):
-        uid = int(call.data.split("_")[1])
-        ads_orders.pop(uid, None)
+# =====================================================
+# CALLBACK-и: пользователь → админ
+# =====================================================
+def handle_callback(bot, call):
+    data = load()
+    parts = call.data.split("_")
+    action = parts[1]
+    uid = parts[2]
+
+    # --------------------------------------------------
+    # ОТМЕНА ПОЛЬЗОВАТЕЛЕМ
+    # --------------------------------------------------
+    if action == "cancel":
+        data["pending"].pop(uid, None)
+        save(data)
         bot.answer_callback_query(call.id)
         bot.send_message(uid, "❌ Заявка отменена.")
+        return
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("changephoto_"))
-    def change_photo(call):
-        uid = int(call.data.split("_")[1])
-        ads_orders[uid]["step"] = "wait_photo"
+    # --------------------------------------------------
+    # ИЗМЕНЕНИЕ ФОТО
+    # --------------------------------------------------
+    if action == "change" and parts[2] == "photo":
+        data["pending"][uid]["step"] = "photo"
+        save(data)
         bot.answer_callback_query(call.id)
-        bot.send_message(uid, "📸 Отправьте новое фото.")
+        bot.send_message(int(uid), "📸 Отправьте новое фото:")
+        return
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("changecount_"))
-    def change_count(call):
-        uid = int(call.data.split("_")[1])
-        ads_orders[uid]["step"] = "wait_count"
+    # --------------------------------------------------
+    # ИЗМЕНЕНИЕ КОЛИЧЕСТВА
+    # --------------------------------------------------
+    if action == "change" and parts[2] == "count":
+        data["pending"][uid]["step"] = "count"
+        save(data)
         bot.answer_callback_query(call.id)
-        bot.send_message(uid, "🔢 Введите новое количество показов.")
+        bot.send_message(int(uid), "🔢 Введите новое количество:")
+        return
 
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("confirm_"))
-    def confirm(call):
-        uid = int(call.data.split("_")[1])
-        order = ads_orders[uid]
+    # --------------------------------------------------
+    # ВСЁ ВЕРНО → ОТПРАВИТЬ АДМИНАМ
+    # --------------------------------------------------
+    if action == "confirm":
+        ad = data["pending"][uid]
 
         kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_ok_{uid}"))
-        kb.add(InlineKeyboardButton("💰 Одобрить с ценой", callback_data=f"admin_price_{uid}"))
-        kb.add(InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_reject_{uid}"))
+        kb.add(InlineKeyboardButton("✅ Одобрить", callback_data=f"ads_ok_{uid}"))
+        kb.add(InlineKeyboardButton("💰 Одобрить с ценой", callback_data=f"ads_price_{uid}"))
+        kb.add(InlineKeyboardButton("❌ Отклонить", callback_data=f"ads_reject_{uid}"))
 
         bot.send_photo(
             ADMIN_CHAT,
-            order["photo"],
+            ad["photo"],
             caption=(
-                f"📢 Новая заявка!\n\n"
-                f"👤 @{call.from_user.username}\n"
-                f"ID: {uid}\n"
-                f"Показы: {order['count']}\n"
-                f"💰 Примерная цена: {order['approx_price']}"
+                f"📢 Новая заявка!\n"
+                f"👤 @{ad['user']}\n"
+                f"ID: {uid}\n\n"
+                f"Показы: {ad['count']}\n"
+                f"💰 Примерная цена: {ad['approx']}"
             ),
             reply_markup=kb
         )
 
         bot.answer_callback_query(call.id)
-        bot.send_message(uid, "📤 Заявка отправлена на проверку!")
+        bot.send_message(int(uid), "📤 Заявка отправлена на модерацию!")
+        save(data)
+        return
 
-    ###############################################
-    # АДМИНСКИЕ КНОПКИ
-    ###############################################
-
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("admin_reject_"))
-    def admin_reject(call):
-        uid = int(call.data.split("_")[2])
-        bot.answer_callback_query(call.id, "Отклонено!")
-        bot.send_message(uid, "❌ Ваша реклама отклонена.")
-        ads_orders.pop(uid, None)
-
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("admin_ok_"))
-    def admin_ok(call):
-        uid = int(call.data.split("_")[2])
-        order = ads_orders[uid]
+    # --------------------------------------------------
+    # ОТКЛОНЕНИЕ
+    # --------------------------------------------------
+    if action == "reject":
         bot.answer_callback_query(call.id)
+        bot.send_message(int(uid), "❌ Ваша реклама отклонена.")
+        data["pending"].pop(uid, None)
+        save(data)
+        return
 
-        send_payment(uid, order["approx_price"])
-
-    @bot.callback_query_handler(func=lambda c: c.data.startswith("admin_price_"))
-    def admin_price(call):
-        uid = int(call.data.split("_")[2])
-        waiting_new_price[call.from_user.id] = uid
+    # --------------------------------------------------
+    # ОДОБРИТЬ БЕЗ ИЗМЕНЕНИЯ ЦЕНЫ
+    # --------------------------------------------------
+    if action == "ok":
+        ad = data["pending"][uid]
+        price = ad["approx"]
         bot.answer_callback_query(call.id)
-        bot.send_message(ADMIN_CHAT, f"Введите новую цену для сделки (ID {uid}):")
+        send_payment(bot, uid, price)
+        return
 
-    @bot.message_handler(func=lambda m: m.chat.id == ADMIN_CHAT and m.from_user.id in waiting_new_price)
-    def admin_set_price(message):
-        admin_id = message.from_user.id
-        uid = waiting_new_price[admin_id]
-
-        try:
-            price = float(message.text)
-        except:
-            bot.send_message(ADMIN_CHAT, "Цена должна быть числом.")
-            return
-
-        ads_orders[uid]["final_price"] = price
-        del waiting_new_price[admin_id]
-
-        send_payment(uid, price)
-        bot.send_message(ADMIN_CHAT, f"💰 Цена {price} Stars отправлена пользователю.")
+    # --------------------------------------------------
+    # ОДОБРИТЬ С УСТАНОВКОЙ ЦЕНЫ
+    # --------------------------------------------------
+    if action == "price":
+        WAIT_PRICE[call.from_user.id] = uid
+        bot.answer_callback_query(call.id)
+        bot.send_message(ADMIN_CHAT, f"Введите новую цену для заявки {uid}:")
+        return
 
 
-###################################################
+# =====================================================
+# Админ вводит цену вручную
+# =====================================================
+def admin_set_price(bot, msg):
+    admin = msg.from_user.id
+
+    if admin not in WAIT_PRICE:
+        return
+
+    uid = WAIT_PRICE[admin]
+
+    try:
+        price = float(msg.text)
+    except:
+        bot.send_message(ADMIN_CHAT, "Введите корректное число.")
+        return
+
+    del WAIT_PRICE[admin]
+
+    send_payment(bot, uid, price)
+    bot.send_message(ADMIN_CHAT, f"💰 Цена {price} отправлена пользователю.")
+
+
+# =====================================================
 # ОТПРАВКА ОПЛАТЫ (Telegram Stars)
-###################################################
-def send_payment(uid, amount):
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton(
-            "💳 Оплатить в Stars",
-            pay=True
-        )
+# =====================================================
+def send_payment(bot, uid, stars_amount):
+    stars = int(stars_amount * 100)  # Telegram Stars → integer
+    prices = [LabeledPrice(label="Размещение рекламы", amount=stars)]
+
+    bot.send_invoice(
+        int(uid),
+        title="Оплата рекламы",
+        description="Оплата рекламной кампании",
+        provider_token="5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA",
+        currency="XTR",
+        prices=prices,
+        payload="ads_payment"
     )
 
-    bot.send_message(
-        uid,
-        f"💰 Цена за размещение: {amount} Stars\nНажмите кнопку ниже чтобы оплатить:",
-        reply_markup=kb
-    )
+
+# =====================================================
+# После оплаты
+# =====================================================
+def handle_successful(bot, msg):
+    uid = str(msg.from_user.id)
+    data = load()
+    if uid not in data["pending"]:
+        return
+
+    ad = data["pending"].pop(uid)
+    data["approved"][uid] = ad
+    save(data)
+
+    bot.send_message(uid, "✅ Оплата получена! Ваша реклама поставлена в очередь.")
