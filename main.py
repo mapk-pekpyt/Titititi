@@ -8,6 +8,7 @@ bot = telebot.TeleBot(TOKEN)
 
 BOT_USERNAME = bot.get_me().username.lower()
 
+# ❗ ads УБРАН из PLUGINS
 PLUGINS = {
     "sisi": sisi,
     "hui": hui,
@@ -19,137 +20,102 @@ PLUGINS = {
     "loto": loto,
     "minus": minus,
     "say": say,
-    "ads": ads,            # <-- добавлен плагин рекламы
 }
 
-# Обработчик /my
+# ---------------------------------------------
+# /my
+# ---------------------------------------------
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
-    from plugins import top_plugin
     top_plugin.handle_my(bot, message)
 
 # ---------------------------------------------
-# ✅ Обработчик pre-checkout для Stars
+# Stars pre-checkout
 # ---------------------------------------------
 @bot.pre_checkout_query_handler(func=lambda q: True)
 def checkout(pre_checkout_query):
-    try:
-        bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
-    except Exception as e:
-        print("❌ Ошибка pre-checkout:", e)
-
-# -----------------------------------------------------
-# 🔥 Главный обработчик успешной оплаты для всех
-# -----------------------------------------------------
-@bot.message_handler(content_types=['successful_payment'])
-def payment_handler(message):
-    for name, plugin in PLUGINS.items():
-        try:
-            if hasattr(plugin, "handle_successful"):
-                plugin.handle_successful(bot, message)
-        except Exception as e:
-            print(f"❌ Ошибка в обработке оплаты у {name}: {e}")
-
-    # Лото: добавляем реальные звезды
-    try:
-        stars = 0
-        if hasattr(message, "successful_payment"):
-            stars = int(getattr(message.successful_payment, "total_amount", 0)) // 100
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-        if stars > 0 and hasattr(loto, "add_stars"):
-            loto.add_stars(chat_id, user_id, stars)
-            if hasattr(loto, "check_loto"):
-                loto.check_loto(bot, chat_id)
-    except Exception as e:
-        print(f"❌ Ошибка при добавлении звезд в лото: {e}")
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
 # ---------------------------------------------
-# Обработчики рекламы
+# Успешная оплата
+# ---------------------------------------------
+@bot.message_handler(content_types=['successful_payment'])
+def payment_handler(message):
+    for plugin in PLUGINS.values():
+        if hasattr(plugin, "handle_successful"):
+            plugin.handle_successful(bot, message)
+
+    # Лото
+    try:
+        stars = int(message.successful_payment.total_amount) // 100
+        loto.add_stars(message.chat.id, message.from_user.id, stars)
+        loto.check_loto(bot, message.chat.id)
+    except:
+        pass
+
+# ---------------------------------------------
+# Команды рекламы (ТОЛЬКО ЯВНЫЕ)
 # ---------------------------------------------
 @bot.message_handler(commands=["buy_ads"])
 def buy_ads_cmd(msg):
-    try:
-        ads.handle_buy(bot, msg)
-    except Exception as e:
-        print("Ошибка buy_ads:", e)
+    ads.handle_buy(bot, msg)
 
 @bot.message_handler(commands=["priser"])
 def price_cmd(msg):
-    try:
-        ads.handle_price(bot, msg)
-    except Exception as e:
-        print("Ошибка priser:", e)
+    ads.handle_price(bot, msg)
 
 # ---------------------------------------------
-# Обработчик callback
+# Callback рекламы
 # ---------------------------------------------
 @bot.callback_query_handler(func=lambda call: True)
-def global_callback_handler(call):
-    try:
-        if hasattr(ads, "handle_callback"):
-            ads.handle_callback(bot, call)
-    except Exception as e:
-        print("Ошибка callback:", e)
+def callback_handler(call):
+    ads.handle_callback(bot, call)
 
 # ---------------------------------------------
-# Общий обработчик всех плагинов (текст + фото)
+# ГЛАВНЫЙ ОБРАБОТЧИК (без вмешательства рекламы)
 # ---------------------------------------------
 @bot.message_handler(content_types=["text", "photo"])
-def handle_all_messages(message):
-    user_id = str(message.from_user.id)
-
-    # Проверка рекламы в процессе покупки
-    try:
-        data = ads.load_ads()
-        if user_id in data.get("pending", {}):
-            ads.handle(bot, message)
-            return
-    except Exception:
-        pass
-
+def handle_all(message):
     plugin_called = False
 
-    # Фото
+    # --- Фото ---
     if message.content_type == "photo":
-        for name, plugin in PLUGINS.items():
+        for plugin in PLUGINS.values():
             if hasattr(plugin, "handle"):
-                try:
+                plugin.handle(bot, message)
+                plugin_called = True
+
+    # --- Текст ---
+    else:
+        text = message.text
+        if not text:
+            return
+
+        cmd_raw = text.split()[0].lower()
+        cmd = cmd_raw.split("@")[0]
+
+        plugin_name = TRIGGERS.get(cmd)
+
+        if plugin_name and plugin_name in PLUGINS:
+            PLUGINS[plugin_name].handle(bot, message)
+            plugin_called = True
+        else:
+            # обычный текст
+            for plugin in PLUGINS.values():
+                if hasattr(plugin, "handle"):
                     plugin.handle(bot, message)
                     plugin_called = True
-                except Exception as e:
-                    print(f"❗ Ошибка в плагине {name}: {e}")
-    else:  # Текст
-        text = message.text
-        if text:
-            cmd_raw = text.split()[0].lower()
-            cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
-            plugin_name = TRIGGERS.get(cmd)
-            if plugin_name:
-                plugin = PLUGINS.get(plugin_name)
-                if plugin and hasattr(plugin, "handle"):
-                    try:
-                        plugin.handle(bot, message)
-                        plugin_called = True
-                    except Exception as e:
-                        print(f"❗ Ошибка в плагине {plugin_name}: {e}")
-            else:
-                # Обычный текст — пробуем передать всем плагинам один раз
-                for name, plugin in PLUGINS.items():
-                    if hasattr(plugin, "handle"):
-                        try:
-                            plugin.handle(bot, message)
-                            plugin_called = True
-                        except Exception as e:
-                            print(f"❗ Ошибка в плагине {name}: {e}")
 
-    # Показываем рекламу один раз, только если плагин был вызван
+    # -----------------------------------------
+    # РЕКЛАМА = ПОСЛЕ ВСЕГО, 1 РАЗ
+    # -----------------------------------------
     if plugin_called:
         try:
             ads.send_random_ads(bot, message.chat.id)
-        except Exception as e:
-            print("Ошибка показа рекламы:", e)
+        except:
+            pass
 
+# ---------------------------------------------
 if __name__ == "__main__":
     print("Бот запущен...")
     bot.infinity_polling()
