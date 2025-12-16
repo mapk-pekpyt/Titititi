@@ -1,86 +1,92 @@
 TRIGGERS = {
     "/start": "start",
-    
-    # ==== SISI ====
+    "старт": "start",
+
+    # ================= SISI =================
     "/sisi": "sisi",
-    "/sisi@Sisititibot": "sisi",
+    "/sisi@sisititibot": "sisi",
+    "сиси": "sisi",
     "сиськи": "sisi",
-    "/boosts": "sisi",
-    "/boosts@Sisititibot": "sisi",
-    "бусты": "sisi",
+    "сисечки": "sisi",
+
+    # буст сисек (логика внутри плагина)
+    "буст": "sisi",
+
+    # цена бустов
     "/boostprice": "bust_price",
-    "/boostprice@Sisititibot": "bust_price",
+    "/boostprice@sisititibot": "bust_price",
+    "цена бустов": "bust_price",
     "цена_бустов": "bust_price",
 
-    # ==== HUI ====
+    # ================= HUI =================
     "/hui": "hui",
-    "/hui@Sisititibot": "hui",
+    "/hui@sisititibot": "hui",
     "хуй": "hui",
-    "/boosth": "hui",
-    "/boosth@Sisititibot": "hui",
-    "бустх": "hui",
+    "болт": "hui",
+    "дружок": "hui",
 
-    # ==== KLITOR ====
+    # ================= KLITOR =================
     "/klitor": "klitor",
-    "/klitor@Sisititibot": "klitor",
+    "/klitor@sisititibot": "klitor",
     "клитор": "klitor",
-    "/boostk": "klitor",
-    "/boostk@Sisititibot": "klitor",
-    "бустк": "klitor",
+    "валынa": "klitor",
 
-    # ==== MUT ====
+    # ================= MUT =================
     "/mut": "mut",
-    "/mut@Sisititibot": "mut",
+    "/mut@sisititibot": "mut",
     "мут": "mut",
+    "замутить": "mut",
+
     "/price": "mut",
-    "/price@Sisititibot": "mut",
+    "/price@sisititibot": "mut",
+    "цена мута": "mut",
     "цена_мута": "mut",
 
-    # ==== TOP ====
+    # ================= TOP =================
     "/top": "top_plugin",
-    "/top@Sisititibot": "top_plugin",
+    "/top@sisititibot": "top_plugin",
     "топ": "top_plugin",
+    "рейтинг": "top_plugin",
 
-    # ==== KTO ====
+    # ================= MY =================
+    "/my": "top_plugin",
+    "мои размеры": "top_plugin",
+    "мои": "top_plugin",
+
+    # ================= KTO =================
     "/kto": "kto",
-    "/kto@Sisititibot": "kto",
+    "/kto@sisititibot": "kto",
     "кто": "kto",
-    
-    # ==== LOTO ====
+
+    # ================= LOTO =================
     "/loto": "loto",
-    "/loto@Sisititibot": "loto",
+    "/loto@sisititibot": "loto",
     "лото": "loto",
-    
+
     "/lotoprice": "loto",
-    "/lotoprice@Sisititibot": "loto",
+    "/lotoprice@sisititibot": "loto",
+    "цена лото": "loto",
     "цена_лото": "loto",
-    
+
     "/gift": "loto",
-    "/gift@Sisititibot": "loto",
+    "/gift@sisititibot": "loto",
     "подарок": "loto",
-    
-    # ==== MINUS ====
+
+    # ================= MINUS =================
     "/minuss": "minus",
-    "/minuss@Sisititibot": "minus",
+    "/minuss@sisititibot": "minus",
     "минусс": "minus",
+
     "/minush": "minus",
-    "/minush@Sisititibot": "minus",
+    "/minush@sisititibot": "minus",
     "минусх": "minus",
+
     "/minusk": "minus",
-    "/minusk@Sisititibot": "minus",
+    "/minusk@sisititibot": "minus",
     "минуск": "minus",
 
-    # ==== SAY ====
+    # ================= SAY =================
     "/say": "say",
-    "/say@Sisititibot": "say",
+    "/say@sisititibot": "say",
     "скажи": "say",
-
-    # ==== ADS ====
-    "/priser": "ads",
-    "/priser@Sisititibot": "ads",
-    "цена_рекламы": "ads",
-    
-    "/buy_ads": "ads",
-    "/buy_ads@Sisititibot": "ads",
-    "купить_рекламу": "ads",
 }
