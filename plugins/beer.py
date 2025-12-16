@@ -24,8 +24,8 @@ def handle(bot, message):
             cur = data[str(chat)][str(user.id)].get("beer", 0)
             return bot.reply_to(
                 message,
-                f"{name}, шалунишка 🐾, думал не замечу? "
-                f"Ты уже выпил сегодня и твоя кружка сейчас {cur} мл 🍺"
+                f"{name}, алкаш ебаный, думал не замечу? "
+                f"Ты уже выпил сегодня и всего ты всасал {cur} литров пива🍺"
             )
 
         delta = max(weighted_random(), 0)
@@ -37,8 +37,8 @@ def handle(bot, message):
 
         bot.reply_to(
             message,
-            f"{name}, ты выпил +{delta} мл пива, "
-            f"теперь твоя кружка {new_ml} мл 🍺"
+            f"{name}, ты выпил +{delta} Л. пива, "
+            f"долбоеб, ты выжрал {new_ml} Литров пива 🍺"
         )
         return
 
@@ -69,16 +69,16 @@ def handle(bot, message):
             new_ml = data[str(chat)][str(target_user.id)]["beer"]
             return bot.reply_to(
                 message,
-                f"{get_name(target_user)}, тебе долили +{n} мл пива 🍺 "
-                f"теперь кружка {new_ml} мл"
+                f"{get_name(target_user)}, тебе долили +{n} Литров пива 🍺 "
+                f"теперь в тебе {new_ml} Литров"
             )
 
-        prices = [LabeledPrice(label=f"Долить пива +{n} мл", amount=total)]
+        prices = [LabeledPrice(label=f"Долить пива +{n} л", amount=total)]
         bot.send_invoice(
             chat_id=chat,
             title="🍺 Доливка пива",
             description=(
-                f"{name} хочет долить {n} мл пива {get_name(target_user)} 😈\n"
+                f"{name} хочет долить {n} л пива {get_name(target_user)} 😈\n"
                 f"💰 {total} ⭐️"
             ),
             invoice_payload=f"boost:{chat}:{target_user.id}:beer:{n}",
