@@ -1,103 +1,119 @@
 # plugins/sisi.py
-import os
 from telebot.types import LabeledPrice
 from plugins.common import weighted_random, get_name
 from plugins import top_plugin
 from plugins.bust_price import load_price
 
-PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"  # если нужно — вынесу в env
+PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
+
 
 def handle(bot, message):
-    """
-    Обработчик команды /sisi и /boosts
-    """
-    text = (message.text or "").strip()
-    cmd_raw = text.split()[0].lower() if text else ""
-    cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
+    text = (message.text or "").strip().lower()
+    if not text:
+        return
 
-    user = message.from_user
+    parts = text.split()
+    cmd = parts[0]
+    args = parts[1:]
+
     chat = message.chat.id
-    name = get_name(user)
+    sender = message.from_user
 
-    # ensure user exists in top DB
-    top_plugin.ensure_user(chat, user)
+    # цель буста — по умолчанию сам отправитель
+    target_user = sender
 
-    # ---------- ежедневная игра /sisi ----------
-    if cmd == "/sisi":
-        if top_plugin.was_today(chat, user, "last_sisi"):
+    # если ответом — бустим того, кому ответили
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target_user = message.reply_to_message.from_user
+
+    sender_name = get_name(sender)
+    target_name = get_name(target_user)
+
+    # гарантируем наличие пользователей
+    top_plugin.ensure_user(chat, sender)
+    top_plugin.ensure_user(chat, target_user)
+
+    # =====================================================
+    # 🎮 СИСИ (ежедневно)
+    # =====================================================
+    if cmd in ("/sisi", "sisi", "сиси", "сиськи", "сисечки"):
+        if top_plugin.was_today(chat, sender, "last_sisi"):
             data = top_plugin.load()
-            current = data.get(str(chat), {}).get(str(user.id), {}).get("sisi", 0)
-            return bot.reply_to(
+            current = data.get(str(chat), {}).get(str(sender.id), {}).get("sisi", 0)
+            bot.reply_to(
                 message,
-                f"{name}, шалунишка ты мой, думал не замечу? "
-                f"Ты уже играл сегодня и твои вишенки сейчас {current} размера 😳🍒"
+                f"{sender_name}, ты уже сегодня играла 😳\n"
+                f"Размер сейчас: {current} 🍒"
             )
+            return
 
-        # delta — неотрицательное
         delta = weighted_random()
         if delta < 0:
             delta = 0
 
-        top_plugin.update_stat(chat, user, "sisi", delta)
-        top_plugin.update_date(chat, user, "last_sisi")
+        top_plugin.update_stat(chat, sender, "sisi", delta)
+        top_plugin.update_date(chat, sender, "last_sisi")
 
         data = top_plugin.load()
-        new_size = data[str(chat)][str(user.id)]["sisi"]
+        new_size = data[str(chat)][str(sender.id)]["sisi"]
 
         bot.reply_to(
             message,
-            f"{name}, твои сисечки выросли на +{delta}, теперь твоя грудь {new_size} размера 😳🍒"
+            f"{sender_name}, твои сисечки выросли на +{delta} 😳🍒\n"
+            f"Теперь размер: {new_size}"
         )
         return
 
-    # ---------- платный буст /boosts [n] ----------
-    if cmd == "/boosts":
-        parts = text.split()
+    # =====================================================
+    # 💸 БУСТ СИСЕК
+    # =====================================================
+    if cmd == "буст" and len(args) >= 1 and args[0] == "сиськи":
         n = 1
-        if len(parts) >= 2:
+        if len(args) >= 2:
             try:
-                n = max(int(parts[1]), 1)
+                n = max(int(args[1]), 1)
             except:
                 n = 1
 
         price = load_price()
         total = price * n
 
-        # если цена 0 — даём сразу
+        # бесплатный буст
         if price <= 0:
-            top_plugin.update_stat(chat, user, "sisi", n)
-            top_plugin.update_date(chat, user, "last_sisi")
-            data = top_plugin.load()
-            new_size = data[str(chat)][str(user.id)]["sisi"]
-            return bot.reply_to(
-                message,
-                f"{name}, твои сисечки выросли на +{n}, теперь твоя грудь {new_size} размера 😳🍒"
-            )
+            top_plugin.update_stat(chat, target_user, "sisi", n)
+            top_plugin.update_date(chat, target_user, "last_sisi")
 
-        try:
-            prices = [LabeledPrice(label="Boost Sisi", amount=total)]
-            bot.send_invoice(
-                chat_id=chat,
-                title="Буст сисек",
-                description=f"{name} хочет увеличить сиськи на +{n}",
-                invoice_payload=f"boost:{chat}:{user.id}:sisi:{n}",
-                provider_token=PROVIDER_TOKEN,
-                currency="XTR",
-                prices=prices
+            data = top_plugin.load()
+            new_size = data[str(chat)][str(target_user.id)]["sisi"]
+
+            bot.reply_to(
+                message,
+                f"🔥 {sender_name} увеличил сиськи {target_name}!\n"
+                f"+{n} 🍒 → теперь {new_size}"
             )
-        except Exception as e:
-            bot.reply_to(message, f"❌ Ошибка оплаты: {e}")
+            return
+
+        # платный буст
+        prices = [LabeledPrice(label="Boost Sisi", amount=total)]
+        bot.send_invoice(
+            chat_id=chat,
+            title="Буст сисек",
+            description=f"{sender_name} увеличивает сиськи {target_name} на +{n}",
+            invoice_payload=f"boost:{chat}:{sender.id}:{target_user.id}:{n}",
+            provider_token=PROVIDER_TOKEN,
+            currency="XTR",
+            prices=prices
+        )
+
 
 def handle_successful(bot, message):
-    """
-    Вызывается при successful_payment (main должен направлять сюда сообщение)
-    распознаёт payload и применяет буст для s i s i
-    """
-    if not hasattr(message, "successful_payment") or not message.successful_payment:
+    if not hasattr(message, "successful_payment"):
         return
 
-    payload = getattr(message.successful_payment, "invoice_payload", "") or \
-              getattr(message.successful_payment, "payload", "")
+    payload = (
+        getattr(message.successful_payment, "invoice_payload", "")
+        or getattr(message.successful_payment, "payload", "")
+    )
 
     if not payload.startswith("boost:"):
         return
@@ -105,28 +121,33 @@ def handle_successful(bot, message):
     parts = payload.split(":")
     if len(parts) != 5:
         return
-    _, chat_s, payer_s, stat, n_s = parts
-    if stat != "sisi":
-        return
+
+    _, chat_s, payer_s, target_s, n_s = parts
 
     try:
         chat_id = int(chat_s)
-        payer_id = int(payer_s)
+        target_id = int(target_s)
         n = int(n_s)
     except:
         return
 
-    # payer is message.from_user
     payer = message.from_user
-    # ensure user exists
-    top_plugin.ensure_user(chat_id, payer)
 
-    # apply and save
-    top_plugin.update_stat(chat_id, payer, "sisi", n)
-    top_plugin.update_date(chat_id, payer, "last_sisi")
+    # фейковый user-объект не нужен — берём из message
+    target_user = payer
+    if target_id != payer.id:
+        target_user = message.reply_to_message.from_user if message.reply_to_message else payer
+
+    top_plugin.ensure_user(chat_id, target_user)
+    top_plugin.update_stat(chat_id, target_user, "sisi", n)
+    top_plugin.update_date(chat_id, target_user, "last_sisi")
 
     data = top_plugin.load()
-    new_size = data[str(chat_id)][str(payer.id)]["sisi"]
+    new_size = data[str(chat_id)][str(target_user.id)]["sisi"]
 
-    # final message
-    bot.send_message(chat_id, f"{get_name(payer)}, твои сисечки выросли на +{n}, теперь твоя грудь {new_size} размера 😳🍒")
+    bot.send_message(
+        chat_id,
+        f"💸 Оплата прошла!\n"
+        f"{get_name(target_user)} получил +{n} 🍒\n"
+        f"Теперь размер: {new_size}"
+    )
