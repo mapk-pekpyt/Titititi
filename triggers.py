@@ -89,4 +89,8 @@ TRIGGERS = {
     "/buy_ads": "ads",
     "/buy_ads@sisititibot": "ads",
     "купить_рекламу": "ads",
+    
+    # пиво
+      "/выпить пива": "beer",
+    "долить пива": "beer",
 }
