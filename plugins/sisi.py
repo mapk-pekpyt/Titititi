@@ -8,98 +8,79 @@ PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
 
 
 def handle(bot, message):
-    text = (message.text or "").strip().lower()
-    if not text:
-        return
+    text = (message.text or "").strip()
+    cmd = text.split()[0].lower().split("@")[0]
 
-    parts = text.split()
-    cmd = parts[0]
-    args = parts[1:]
-
+    user = message.from_user
     chat = message.chat.id
-    sender = message.from_user
+    name = get_name(user)
 
-    # цель буста — по умолчанию сам отправитель
-    target_user = sender
+    top_plugin.ensure_user(chat, user)
 
-    # если ответом — бустим того, кому ответили
-    if message.reply_to_message and message.reply_to_message.from_user:
-        target_user = message.reply_to_message.from_user
-
-    sender_name = get_name(sender)
-    target_name = get_name(target_user)
-
-    # гарантируем наличие пользователей
-    top_plugin.ensure_user(chat, sender)
-    top_plugin.ensure_user(chat, target_user)
-
-    # =====================================================
-    # 🎮 СИСИ (ежедневно)
-    # =====================================================
-    if cmd in ("/sisi", "sisi", "сиси", "сиськи", "сисечки"):
-        if top_plugin.was_today(chat, sender, "last_sisi"):
+    # =========================
+    # 🍒 ЕЖЕДНЕВНЫЕ СИСЬКИ
+    # =========================
+    if cmd in ("/sisi", "сиськи"):
+        if top_plugin.was_today(chat, user, "last_sisi"):
             data = top_plugin.load()
-            current = data.get(str(chat), {}).get(str(sender.id), {}).get("sisi", 0)
-            bot.reply_to(
+            cur = data[str(chat)][str(user.id)]["sisi"]
+            return bot.reply_to(
                 message,
-                f"{sender_name}, ты уже сегодня играла 😳\n"
-                f"Размер сейчас: {current} 🍒"
+                f"{name}, шалунишка ты мой, думал не замечу? "
+                f"Ты уже играл сегодня и твои вишенки сейчас {cur} размера 😳🍒"
             )
-            return
 
-        delta = weighted_random()
-        if delta < 0:
-            delta = 0
-
-        top_plugin.update_stat(chat, sender, "sisi", delta)
-        top_plugin.update_date(chat, sender, "last_sisi")
+        delta = max(weighted_random(), 0)
+        top_plugin.update_stat(chat, user, "sisi", delta)
+        top_plugin.update_date(chat, user, "last_sisi")
 
         data = top_plugin.load()
-        new_size = data[str(chat)][str(sender.id)]["sisi"]
+        new_size = data[str(chat)][str(user.id)]["sisi"]
 
         bot.reply_to(
             message,
-            f"{sender_name}, твои сисечки выросли на +{delta} 😳🍒\n"
-            f"Теперь размер: {new_size}"
+            f"{name}, твои сисечки выросли на +{delta}, "
+            f"теперь твоя грудь {new_size} размера 😳🍒"
         )
         return
 
-    # =====================================================
+    # =========================
     # 💸 БУСТ СИСЕК
-    # =====================================================
-    if cmd == "буст" and len(args) >= 1 and args[0] == "сиськи":
+    # =========================
+    if cmd in ("/boosts", "бусты"):
+        parts = text.split()
         n = 1
-        if len(args) >= 2:
+        if len(parts) >= 2:
             try:
-                n = max(int(args[1]), 1)
+                n = max(int(parts[1]), 1)
             except:
                 n = 1
 
         price = load_price()
         total = price * n
 
-        # бесплатный буст
         if price <= 0:
-            top_plugin.update_stat(chat, target_user, "sisi", n)
-            top_plugin.update_date(chat, target_user, "last_sisi")
-
+            top_plugin.update_stat(chat, user, "sisi", n)
+            top_plugin.update_date(chat, user, "last_sisi")
             data = top_plugin.load()
-            new_size = data[str(chat)][str(target_user.id)]["sisi"]
+            new_size = data[str(chat)][str(user.id)]["sisi"]
 
-            bot.reply_to(
+            return bot.reply_to(
                 message,
-                f"🔥 {sender_name} увеличил сиськи {target_name}!\n"
-                f"+{n} 🍒 → теперь {new_size}"
+                f"{name}, твои сисечки выросли на +{n}, "
+                f"теперь твоя грудь {new_size} размера 😳🍒"
             )
-            return
 
-        # платный буст
-        prices = [LabeledPrice(label="Boost Sisi", amount=total)]
+        prices = [LabeledPrice(label=f"Буст сисек +{n}", amount=total)]
         bot.send_invoice(
             chat_id=chat,
-            title="Буст сисек",
-            description=f"{sender_name} увеличивает сиськи {target_name} на +{n}",
-            invoice_payload=f"boost:{chat}:{sender.id}:{target_user.id}:{n}",
+            title="🔥 Буст сисек",
+            description=(
+                f"{name} хочет грудь побольше 😈\n\n"
+                f"➕ +{n} размера\n"
+                f"💰 {total} ⭐️"
+            ),
+            invoice_payload=f"boost:{chat}:{user.id}:sisi:{n}",
             provider_token=PROVIDER_TOKEN,
             currency="XTR",
             prices=prices
@@ -107,47 +88,40 @@ def handle(bot, message):
 
 
 def handle_successful(bot, message):
-    if not hasattr(message, "successful_payment"):
+    if not getattr(message, "successful_payment", None):
         return
 
-    payload = (
-        getattr(message.successful_payment, "invoice_payload", "")
-        or getattr(message.successful_payment, "payload", "")
-    )
+    # 🔥 УДАЛЯЕМ INVOICE
+    try:
+        if message.reply_to_message:
+            bot.delete_message(
+                message.chat.id,
+                message.reply_to_message.message_id
+            )
+    except:
+        pass
 
+    payload = message.successful_payment.invoice_payload
     if not payload.startswith("boost:"):
         return
 
-    parts = payload.split(":")
-    if len(parts) != 5:
+    _, chat_s, _, stat, n_s = payload.split(":")
+    if stat != "sisi":
         return
 
-    _, chat_s, payer_s, target_s, n_s = parts
+    chat_id = int(chat_s)
+    n = int(n_s)
+    user = message.from_user
 
-    try:
-        chat_id = int(chat_s)
-        target_id = int(target_s)
-        n = int(n_s)
-    except:
-        return
-
-    payer = message.from_user
-
-    # фейковый user-объект не нужен — берём из message
-    target_user = payer
-    if target_id != payer.id:
-        target_user = message.reply_to_message.from_user if message.reply_to_message else payer
-
-    top_plugin.ensure_user(chat_id, target_user)
-    top_plugin.update_stat(chat_id, target_user, "sisi", n)
-    top_plugin.update_date(chat_id, target_user, "last_sisi")
+    top_plugin.ensure_user(chat_id, user)
+    top_plugin.update_stat(chat_id, user, "sisi", n)
+    top_plugin.update_date(chat_id, user, "last_sisi")
 
     data = top_plugin.load()
-    new_size = data[str(chat_id)][str(target_user.id)]["sisi"]
+    new_size = data[str(chat_id)][str(user.id)]["sisi"]
 
     bot.send_message(
         chat_id,
-        f"💸 Оплата прошла!\n"
-        f"{get_name(target_user)} получил +{n} 🍒\n"
-        f"Теперь размер: {new_size}"
+        f"{get_name(user)}, твои сисечки выросли на +{n}, "
+        f"теперь твоя грудь {new_size} размера 😳🍒"
     )
