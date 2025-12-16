@@ -2,7 +2,7 @@
 import os
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
 
-DATA_FILE = "plugins/ads_data.json"
+#DATA_FILE = "plugins/ads_data.json"
 
 ADMIN_CHAT = -5037660983     # Админский чат
 BASE_PRICE = 1.0             # цена за 1 показ
@@ -18,7 +18,7 @@ def load():
 
 def save(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        #json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 # =====================================================
