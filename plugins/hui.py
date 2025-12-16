@@ -1,3 +1,4 @@
+# plugins/hui.py
 import os
 from telebot.types import LabeledPrice
 from plugins.common import weighted_random, get_name
@@ -11,40 +12,41 @@ def handle(bot, message):
     cmd_raw = text.split()[0].lower() if text else ""
     cmd = cmd_raw.split("@")[0] if "@" in cmd_raw else cmd_raw
 
-    chat = message.chat.id
     user = message.from_user
+    chat = message.chat.id
     name = get_name(user)
 
-    # Если команда в ответ на сообщение — цель другой пользователь
-    target_user = message.reply_to_message.from_user if message.reply_to_message else user
-    top_plugin.ensure_user(chat, target_user)
+    top_plugin.ensure_user(chat, user)
 
-    # ---------- ежедневная игра ----------
-    if cmd in ["/hui", "хуй"]:
-        if top_plugin.was_today(chat, target_user, "last_hui"):
+    # ---------- ежедневная игра /hui ----------
+    if cmd == "/hui":
+        if top_plugin.was_today(chat, user, "last_hui"):
             data = top_plugin.load()
-            current = data.get(str(chat), {}).get(str(target_user.id), {}).get("hui", 0)
+            current = data.get(str(chat), {}).get(str(user.id), {}).get("hui", 0)
             return bot.reply_to(
                 message,
-                f"{get_name(target_user)}, ты уже играл сегодня! Твой болтик сейчас {current} см 😳🍌"
+                f"{name}, шалунишка ты мой, думал не замечу? "
+                f"Ты уже играл со своим дружком, твой болтик сейчас {current} см 😳 🍌"
             )
 
         delta = weighted_random()
         if delta < 0:
             delta = 0
 
-        top_plugin.update_stat(chat, target_user, "hui", delta)
-        top_plugin.update_date(chat, target_user, "last_hui")
+        top_plugin.update_stat(chat, user, "hui", delta)
+        top_plugin.update_date(chat, user, "last_hui")
+
         data = top_plugin.load()
-        new_size = data[str(chat)][str(target_user.id)]["hui"]
+        new_size = data[str(chat)][str(user.id)]["hui"]
 
-        return bot.reply_to(
+        bot.reply_to(
             message,
-            f"{get_name(target_user)}, твой хуй вырос на +{delta} см, теперь он {new_size} см 😳🍌"
+            f"{name}, твой хуй вырос на +{delta} см, теперь твой болт {new_size} см 😳🍌"
         )
+        return
 
-    # ---------- платный буст ----------
-    if cmd in ["/boosth", "бустх"]:
+    # ---------- платный буст /boosth [n] ----------
+    if cmd == "/boosth":
         parts = text.split()
         n = 1
         if len(parts) >= 2:
@@ -56,15 +58,14 @@ def handle(bot, message):
         price = load_price()
         total = price * n
 
-        # если цена 0 — даём сразу
         if price <= 0:
-            top_plugin.update_stat(chat, target_user, "hui", n)
-            top_plugin.update_date(chat, target_user, "last_hui")
+            top_plugin.update_stat(chat, user, "hui", n)
+            top_plugin.update_date(chat, user, "last_hui")
             data = top_plugin.load()
-            new_size = data[str(chat)][str(target_user.id)]["hui"]
+            new_size = data[str(chat)][str(user.id)]["hui"]
             return bot.reply_to(
                 message,
-                f"{get_name(target_user)}, твой хуй вырос на +{n} см, теперь он {new_size} см 😳🍌"
+                f"{name}, твой хуй вырос на +{n} см, теперь твой болт {new_size} см 😳🍌"
             )
 
         try:
@@ -73,7 +74,7 @@ def handle(bot, message):
                 chat_id=chat,
                 title="Буст хуя",
                 description=f"{name} хочет увеличить хуй на +{n} см",
-                invoice_payload=f"boost:{chat}:{target_user.id}:hui:{n}",
+                invoice_payload=f"boost:{chat}:{user.id}:hui:{n}",
                 provider_token=PROVIDER_TOKEN,
                 currency="XTR",
                 prices=prices
@@ -84,32 +85,32 @@ def handle(bot, message):
 def handle_successful(bot, message):
     if not hasattr(message, "successful_payment") or not message.successful_payment:
         return
-
-    payload = getattr(message.successful_payment, "invoice_payload", "") or getattr(message.successful_payment, "payload", "")
+    payload = getattr(message.successful_payment, "invoice_payload", "") or \
+              getattr(message.successful_payment, "payload", "")
     if not payload.startswith("boost:"):
         return
 
     parts = payload.split(":")
     if len(parts) != 5:
         return
-    _, chat_s, target_s, stat, n_s = parts
+    _, chat_s, payer_s, stat, n_s = parts
     if stat != "hui":
         return
 
     try:
         chat_id = int(chat_s)
-        target_id = int(target_s)
+        payer_id = int(payer_s)
         n = int(n_s)
     except:
         return
 
-    # payer = message.from_user (тот, кто платит)
-    target_user = type('User', (object,), {'id': target_id, 'first_name': 'Игрок'})()
-    top_plugin.ensure_user(chat_id, target_user)
+    payer = message.from_user
+    top_plugin.ensure_user(chat_id, payer)
 
-    top_plugin.update_stat(chat_id, target_user, "hui", n)
-    top_plugin.update_date(chat_id, target_user, "last_hui")
+    top_plugin.update_stat(chat_id, payer, "hui", n)
+    top_plugin.update_date(chat_id, payer, "last_hui")
 
     data = top_plugin.load()
-    new_size = data[str(chat_id)][str(target_user.id)]["hui"]
-    bot.send_message(chat_id, f"{get_name(target_user)}, твой хуй вырос на +{n} см, теперь он {new_size} см 😳🍌")
+    new_size = data[str(chat_id)][str(payer.id)]["hui"]
+
+    bot.send_message(chat_id, f"{get_name(payer)}, твой хуй вырос на +{n} см, теперь твой болт {new_size} см 😳🍌")
