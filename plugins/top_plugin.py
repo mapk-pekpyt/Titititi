@@ -129,7 +129,7 @@ def handle_top(bot, message):
     beer_list = sorted(users.values(), key=lambda x: x.get("beer", 0), reverse=True)
     txt4 = "🍺 Топ алкашей:\n"
     for i, u in enumerate(beer_list[:3], 1):
-        txt4 += f"{i}. {u['name']} — {u.get('beer',0)} мл 🍺\n"
+        txt4 += f"{i}. {u['name']} — {u.get('beer',0)} л 🍺\n"
 
     # Отправка сообщений
     bot.reply_to(message, txt1)
