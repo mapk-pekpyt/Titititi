@@ -8,15 +8,8 @@ TRIGGERS = {
     "сиси": "sisi",
     "сиськи": "sisi",
     "сисечки": "sisi",
-
-    # буст сисек (логика внутри плагина)
-    "буст": "sisi",
-
-    # цена бустов
-    "/boostprice": "bust_price",
-    "/boostprice@sisititibot": "bust_price",
-    "цена бустов": "bust_price",
-    "цена_бустов": "bust_price",
+    "буст сиськи": "sisi",
+    "буст сисек": "sisi",
 
     # ================= HUI =================
     "/hui": "hui",
@@ -24,19 +17,22 @@ TRIGGERS = {
     "хуй": "hui",
     "болт": "hui",
     "дружок": "hui",
+    "буст хуй": "hui",
+    "буст хуя": "hui",
 
     # ================= KLITOR =================
     "/klitor": "klitor",
     "/klitor@sisititibot": "klitor",
     "клитор": "klitor",
     "валынa": "klitor",
+    "буст клитор": "klitor",
+    "буст клитора": "klitor",
 
     # ================= MUT =================
     "/mut": "mut",
     "/mut@sisititibot": "mut",
     "мут": "mut",
     "замутить": "mut",
-
     "/price": "mut",
     "/price@sisititibot": "mut",
     "цена мута": "mut",
@@ -62,12 +58,10 @@ TRIGGERS = {
     "/loto": "loto",
     "/loto@sisititibot": "loto",
     "лото": "loto",
-
     "/lotoprice": "loto",
     "/lotoprice@sisititibot": "loto",
     "цена лото": "loto",
     "цена_лото": "loto",
-
     "/gift": "loto",
     "/gift@sisititibot": "loto",
     "подарок": "loto",
@@ -76,11 +70,9 @@ TRIGGERS = {
     "/minuss": "minus",
     "/minuss@sisititibot": "minus",
     "минусс": "minus",
-
     "/minush": "minus",
     "/minush@sisititibot": "minus",
     "минусх": "minus",
-
     "/minusk": "minus",
     "/minusk@sisititibot": "minus",
     "минуск": "minus",
@@ -89,4 +81,12 @@ TRIGGERS = {
     "/say": "say",
     "/say@sisititibot": "say",
     "скажи": "say",
+
+    # ================= ADS =================
+    "/priser": "ads",
+    "/priser@sisititibot": "ads",
+    "цена_рекламы": "ads",
+    "/buy_ads": "ads",
+    "/buy_ads@sisititibot": "ads",
+    "купить_рекламу": "ads",
 }
