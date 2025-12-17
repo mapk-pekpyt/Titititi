@@ -8,7 +8,6 @@ bot = telebot.TeleBot(TOKEN)
 
 BOT_USERNAME = bot.get_me().username.lower()
 
-# ❗ ads УБРАН из PLUGINS
 PLUGINS = {
     "sisi": sisi,
     "hui": hui,
@@ -23,70 +22,61 @@ PLUGINS = {
     "beer": beer,
 }
 
-# ---------------------------------------------
+# =====================================================
 # /my
-# ---------------------------------------------
+# =====================================================
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
     top_plugin.handle_my(bot, message)
 
-# ---------------------------------------------
-# Stars pre-checkout
-# ---------------------------------------------
+# =====================================================
+# ⭐ Stars pre-checkout
+# =====================================================
 @bot.pre_checkout_query_handler(func=lambda q: True)
 def checkout(pre_checkout_query):
     bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
-# ---------------------------------------------
-# Успешная оплата
-# ---------------------------------------------
+# =====================================================
+# 💸 Успешная оплата
+# =====================================================
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
     for plugin in PLUGINS.values():
         if hasattr(plugin, "handle_successful"):
             plugin.handle_successful(bot, message)
 
-    # Лото
+# =====================================================
+# 🏆 CALLBACK КНОПКИ ТОПА (ВАЖНО)
+# =====================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith("top_"))
+def top_callbacks(call):
+    top_plugin.handle_top_callback(bot, call)
+
+# =====================================================
+# 💬 СЧЁТЧИК СООБЩЕНИЙ (для топа общения)
+# =====================================================
+@bot.message_handler(func=lambda m: True, content_types=["text"])
+def count_messages(message):
     try:
-        stars = int(message.successful_payment.total_amount) // 100
-        loto.add_stars(message.chat.id, message.from_user.id, stars)
-        loto.check_loto(bot, message.chat.id)
+        top_plugin.count_message(message.chat.id, message.from_user)
     except:
         pass
 
-# ---------------------------------------------
-# Команды рекламы (ТОЛЬКО ЯВНЫЕ)
-# ---------------------------------------------
-@bot.message_handler(commands=["buy_ads"])
-def buy_ads_cmd(msg):
-    ads.handle_buy(bot, msg)
-
-@bot.message_handler(commands=["priser"])
-def price_cmd(msg):
-    ads.handle_price(bot, msg)
-
-# ---------------------------------------------
-# Callback рекламы
-# ---------------------------------------------
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    ads.handle_callback(bot, call)
-
-# ---------------------------------------------
-# ГЛАВНЫЙ ОБРАБОТЧИК (без вмешательства рекламы)
-# ---------------------------------------------
+# =====================================================
+# 🔥 ГЛАВНЫЙ ОБРАБОТЧИК
+# =====================================================
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all(message):
     plugin_called = False
 
-    # --- Фото ---
+    # ---------- ФОТО ----------
     if message.content_type == "photo":
         for plugin in PLUGINS.values():
             if hasattr(plugin, "handle"):
                 plugin.handle(bot, message)
                 plugin_called = True
 
-    # --- Текст ---
+    # ---------- ТЕКСТ ----------
     else:
         text = message.text
         if not text:
@@ -101,22 +91,13 @@ def handle_all(message):
             PLUGINS[plugin_name].handle(bot, message)
             plugin_called = True
         else:
-            # обычный текст
+            # обычный текст → на все плагины
             for plugin in PLUGINS.values():
                 if hasattr(plugin, "handle"):
                     plugin.handle(bot, message)
                     plugin_called = True
 
-    # -----------------------------------------
-    # РЕКЛАМА = ПОСЛЕ ВСЕГО, 1 РАЗ
-    # -----------------------------------------
-    if plugin_called:
-        try:
-            ads.send_random_ads(bot, message.chat.id)
-        except:
-            pass
-
-# ---------------------------------------------
+# =====================================================
 if __name__ == "__main__":
     print("Бот запущен...")
     bot.infinity_polling()
