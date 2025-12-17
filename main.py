@@ -1,33 +1,19 @@
 import telebot
 import os
 from triggers import TRIGGERS
-from plugins import sisi, hui, klitor, mut, top_plugin, kto, bust_price, cannabis_game, minus, say, beer
+from plugins import PLUGINS  # теперь все плагины через PLUGINS
 
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
 BOT_USERNAME = bot.get_me().username.lower()
 
-PLUGINS = {
-    "sisi": sisi,
-    "hui": hui,
-    "klitor": klitor,
-    "mut": mut,
-    "top_plugin": top_plugin,
-    "kto": kto,
-    "bust_price": bust_price,
-    "cannabis_game": cannabis_game,
-    "minus": minus,
-    "say": say,
-    "beer": beer,
-}
-
 # =====================================================
-# /my
+# /my – личные размеры
 # =====================================================
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
-    top_plugin.handle_my(bot, message)
+    PLUGINS["top_plugin"].handle_my(bot, message)
 
 # =====================================================
 # ⭐ Stars pre-checkout
@@ -46,11 +32,11 @@ def payment_handler(message):
             plugin.handle_successful(bot, message)
 
 # =====================================================
-# 🏆 CALLBACK КНОПКИ ТОПА (ВАЖНО)
+# 🏆 CALLBACK КНОПКИ ТОПА
 # =====================================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("top_"))
 def top_callbacks(call):
-    top_plugin.handle_top_callback(bot, call)
+    PLUGINS["top_plugin"].handle_top_callback(bot, call)
 
 # =====================================================
 # 💬 СЧЁТЧИК СООБЩЕНИЙ (для топа общения)
@@ -58,12 +44,12 @@ def top_callbacks(call):
 @bot.message_handler(func=lambda m: True, content_types=["text"])
 def count_messages(message):
     try:
-        top_plugin.count_message(message.chat.id, message.from_user)
+        PLUGINS["top_plugin"].count_message(message.chat.id, message.from_user)
     except:
         pass
 
 # =====================================================
-# 🔥 ГЛАВНЫЙ ОБРАБОТЧИК
+# 🔥 ГЛАВНЫЙ ОБРАБОТЧИК (текст + фото)
 # =====================================================
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all(message):
@@ -97,6 +83,8 @@ def handle_all(message):
                     plugin.handle(bot, message)
                     plugin_called = True
 
+# =====================================================
+# Запуск бота
 # =====================================================
 if __name__ == "__main__":
     print("Бот запущен...")
