@@ -1,6 +1,6 @@
 import sqlite3
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from plugins.common import get_name, german_date
+from plugins.common import get_name
 
 DB_FILE = "data/data.db"
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -49,21 +49,6 @@ def update_stat(chat_id, user, key, delta):
     cursor.execute(f"UPDATE users SET {key} = {key} + ? WHERE chat_id=? AND user_id=?", (delta, chat, uid))
     conn.commit()
 
-def update_date(chat_id, user, key):
-    ensure_user(chat_id, user)
-    chat, uid = str(chat_id), str(user.id)
-    cursor.execute(f"UPDATE users SET {key} = ? WHERE chat_id=? AND user_id=?", (german_date().isoformat(), chat, uid))
-    conn.commit()
-
-def was_today(chat_id, user, key):
-    ensure_user(chat_id, user)
-    chat, uid = str(chat_id), str(user.id)
-    cursor.execute(f"SELECT {key} FROM users WHERE chat_id=? AND user_id=?", (chat, uid))
-    row = cursor.fetchone()
-    if not row or not row[0]:
-        return False
-    return row[0] == german_date().isoformat()
-
 def load_users(chat_id):
     chat = str(chat_id)
     cursor.execute("SELECT * FROM users WHERE chat_id=?", (chat,))
@@ -72,14 +57,14 @@ def load_users(chat_id):
     for r in rows:
         users[r[1]] = {
             "name": r[2],
-            "sisi": r[3],
-            "hui": r[4],
-            "klitor": r[5],
-            "beer": r[6],
-            "bushes": r[7],
-            "high": r[8],
-            "full": r[9],
-            "msg_count": r[10]
+            "sisi": r[3] or 0,
+            "hui": r[4] or 0,
+            "klitor": r[5] or 0,
+            "beer": r[6] or 0,
+            "bushes": r[7] or 0,
+            "high": r[8] or 0,
+            "full": r[9] or 0,
+            "msg_count": r[10] or 0,
         }
     return users
 
@@ -125,12 +110,12 @@ def handle_top_callback(bot, call):
         return
 
     title, emoji, key = key_map[call.data]
-    top_list = sorted(users.values(), key=lambda x: x.get(key,0) or 0, reverse=True)[:10]
+    top_list = sorted(users.values(), key=lambda x: x.get(key,0), reverse=True)[:10]
 
     if key == "klitor":
         text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {_format_klitor(u[key])} см {emoji}" for i,u in enumerate(top_list))
     else:
-        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key] or 0} {emoji}" for i,u in enumerate(top_list))
+        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key]} {emoji}" for i,u in enumerate(top_list))
 
     bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id)
 
@@ -147,9 +132,9 @@ def handle_my(bot, message):
     u = cursor.fetchone()
     txt = (
         f"📊 {u[2]}, твои размеры:\n\n"
-        f"🍒 Сисечки: {u[3]} размера\n"
-        f"🍌 Хуй: {u[4]} см\n"
-        f"🍑 Клитор: {_format_klitor(u[5])} см\n"
+        f"🍒 Сисечки: {u[3] or 0} размера\n"
+        f"🍌 Хуй: {u[4] or 0} см\n"
+        f"🍑 Клитор: {_format_klitor(u[5] or 0)} см\n"
         f"🍺 Выпито пива: {u[6] or 0} л\n"
         f"🌱 Кусты: {u[7] or 0}\n"
         f"😵 Кайф: {u[8] or 0}\n"
