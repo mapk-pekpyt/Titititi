@@ -85,15 +85,10 @@ def handle(bot, message):
 
     # -------- СОБРАТЬ --------
     if text == "собрать":
-        if u[10]:
-            last = datetime.fromisoformat(u[10])
-            if now - last < timedelta(hours=1):
-                mins = int((timedelta(hours=1)-(now-last)).seconds/60)
-                return bot.reply_to(message, f"⏳ Рано, подожди {mins} мин")
         gain = random.randint(0, u[4])
         cursor.execute(
-            "UPDATE cannabis SET weed=weed+?, last_collect=? WHERE chat_id=? AND user_id=?",
-            (gain, now.isoformat(), str(chat), str(user.id))
+            "UPDATE cannabis SET weed=weed+? WHERE chat_id=? AND user_id=?",
+            (gain, str(chat), str(user.id))
         )
         conn.commit()
         return bot.reply_to(message, f"🌿 Собрано {gain} конопли")
@@ -171,16 +166,10 @@ def handle(bot, message):
     if text == "подымить":
         if u[7] <= 0:
             return bot.reply_to(message, "❌ Нет косяков")
-        if u[11]:
-            last = datetime.fromisoformat(u[11])
-            if now - last < timedelta(hours=1):
-                mins = int((timedelta(hours=1)-(now-last)).seconds/60)
-                return bot.reply_to(message, f"⏳ Подожди {mins} мин")
-
         effect = random.choice([-5,-3,-2,-1,0,1,2,3,4,5])
         cursor.execute(
-            "UPDATE cannabis SET joints=joints-1, high=high+?, last_high=? WHERE chat_id=? AND user_id=?",
-            (effect, now.isoformat(), str(chat), str(user.id))
+            "UPDATE cannabis SET joints=joints-1, high=high+? WHERE chat_id=? AND user_id=?",
+            (effect, str(chat), str(user.id))
         )
         conn.commit()
 
@@ -190,3 +179,22 @@ def handle(bot, message):
             return bot.reply_to(message, f"🤢 Ты подавился\nКайф {effect}")
         else:
             return bot.reply_to(message, "😐 Ни рыба ни мясо")
+
+# ================== ФУНКЦИИ ДЛЯ ТОПА ==================
+def load_users(chat_id):
+    chat = str(chat_id)
+    cursor.execute("SELECT user_id,name,coins,bushes,weed,cakes,joints,hunger,high FROM cannabis WHERE chat_id=?", (chat,))
+    rows = cursor.fetchall()
+    users = {}
+    for r in rows:
+        users[r[0]] = {
+            "name": r[1],
+            "coins": r[2],
+            "bushes": r[3],
+            "weed": r[4],
+            "cakes": r[5],
+            "joints": r[6],
+            "hunger": r[7],
+            "high": r[8],
+        }
+    return users
