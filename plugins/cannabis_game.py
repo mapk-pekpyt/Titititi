@@ -1,192 +1,93 @@
-import os
-import json
-import random
+# plugins/cannabis_game.py
+import sqlite3, random
 from datetime import datetime, timedelta
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from plugins.common import get_name, german_date
 
-os.makedirs("data", exist_ok=True)
+DB = "data/data.db"
+conn = sqlite3.connect(DB, check_same_thread=False)
+cursor = conn.cursor()
 
-# -------------------- ПАМЯТЬ --------------------
-def _file(chat_id):
-    return f"data/игра_{chat_id}.json"
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS cannabis (
+    chat_id TEXT,
+    user_id TEXT,
+    name TEXT,
+    coins INTEGER DEFAULT 10,
+    bushes INTEGER DEFAULT 0,
+    weed INTEGER DEFAULT 0,
+    cakes INTEGER DEFAULT 0,
+    joints INTEGER DEFAULT 0,
+    hunger INTEGER DEFAULT 0,
+    high INTEGER DEFAULT 0,
+    last_collect TEXT,
+    last_smoke TEXT,
+    PRIMARY KEY (chat_id, user_id)
+)
+""")
+conn.commit()
 
-def load(chat_id):
-    f = _file(chat_id)
-    if not os.path.exists(f):
-        return {}
-    try:
-        with open(f, "r", encoding="utf8") as file:
-            return json.load(file)
-    except:
-        return {}
+def ensure(chat, user):
+    cursor.execute(
+        "INSERT OR IGNORE INTO cannabis(chat_id,user_id,name) VALUES (?,?,?)",
+        (str(chat), str(user.id), get_name(user))
+    )
+    conn.commit()
 
-def save(chat_id, data):
-    f = _file(chat_id)
-    with open(f, "w", encoding="utf8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
-
-def ensure_user(chat_id, user):
-    data = load(chat_id)
-    uid = str(user.id)
-    if uid not in data:
-        data[uid] = {
-            "коины": 10,
-            "кусты": 0,
-            "конопля": 0,
-            "кексы": 0,
-            "косяки": 0,
-            "сытость": 0,
-            "последний_сбор": None,
-            "последний_кайф": None
-        }
-    save(chat_id, data)
-    return data
-
-# -------------------- ЛОГИКА --------------------
 def handle(bot, message):
-    chat_id = str(message.chat.id)
+    chat = message.chat.id
     user = message.from_user
     name = get_name(user)
     text = (message.text or "").lower().strip()
-    data = ensure_user(chat_id, user)
-    uid = str(user.id)
-    user_data = data[uid]
+    ensure(chat, user)
 
+    cursor.execute(
+        "SELECT * FROM cannabis WHERE chat_id=? AND user_id=?",
+        (str(chat), str(user.id))
+    )
+    u = cursor.fetchone()
     now = datetime.now()
 
-    # ---------- БАЛАНС ----------
     if text == "баланс":
-        msg = (
-            f"🟢 {name}, твой баланс:\n\n"
-            f"💰 Коины: {user_data['коины']}\n"
-            f"🌱 Кусты: {user_data['кусты']}\n"
-            f"🌿 Конопля: {user_data['конопля']}\n"
-            f"🥮 Кексы: {user_data['кексы']}\n"
-            f"🚬 Косяки: {user_data['косяки']}\n"
-            f"❤️ Сытость: {user_data['сытость']}"
-        )
-        return bot.reply_to(message, msg)
-
-    # ---------- КУСТЫ ----------
-    if text.startswith("купить"):
-        try:
-            n = max(int(text.split()[1]), 1)
-        except:
-            n = 1
-        cost = 10 * n
-        if user_data["коины"] < cost:
-            return bot.reply_to(message, f"❌ {name}, у тебя нет {cost} коинов!")
-        user_data["коины"] -= cost
-        user_data["кусты"] += n
-        save(chat_id, data)
-        return bot.reply_to(message, f"🌱 {name}, ты купил {n} кустов за {cost} коинов!")
-
-    # ---------- СОБРАТЬ КОНОПЛЮ ----------
-    if text == "собрать":
-        last = user_data.get("последний_сбор")
-        if last:
-            last_dt = datetime.fromisoformat(last)
-            if now - last_dt < timedelta(hours=1):
-                remain = timedelta(hours=1) - (now - last_dt)
-                minutes = remain.seconds // 60
-                return bot.reply_to(message, f"⏳ {name}, еще {minutes} мин до следующего сбора!")
-        gain = random.randint(0, user_data["кусты"])
-        user_data["конопля"] += gain
-        user_data["последний_сбор"] = now.isoformat()
-        save(chat_id, data)
-        return bot.reply_to(message, f"🌿 {name}, ты собрал {gain} конопли с {user_data['кусты']} кустов!")
-
-    # ---------- ПРОДАТЬ КОНОПЛЮ ----------
-    if text.startswith("продать"):
-        try:
-            n = int(text.split()[1])
-        except:
-            n = 0
-        if user_data["конопля"] < n:
-            return bot.reply_to(message, f"❌ {name}, у тебя нет {n} конопли!")
-        user_data["конопля"] -= n
-        earned = n // 10
-        user_data["коины"] += earned
-        save(chat_id, data)
-        return bot.reply_to(message, f"💰 {name}, ты продал {n} конопли и получил {earned} коинов!")
-
-    # ---------- ИСПЕЧЬ КЕКСЫ ----------
-    if text.startswith("испечь"):
-        try:
-            n = int(text.split()[1])
-        except:
-            n = 0
-        if user_data["конопля"] < n:
-            return bot.reply_to(message, f"❌ {name}, у тебя нет {n} конопли!")
-        burned = 0
-        baked = 0
-        for _ in range(n):
-            if random.random() < 0.3:  # 30% шанс сгореть
-                burned += 1
-            else:
-                baked += 1
-        user_data["конопля"] -= n
-        user_data["кексы"] += baked
-        save(chat_id, data)
-        return bot.reply_to(
+        bot.reply_to(
             message,
-            f"🥮 {name}, ты испёк {baked} кексов 🔥{burned} сгорело"
+            f"🌿 {name}:\n"
+            f"💰 Коины: {u[3]}\n"
+            f"🌱 Кусты: {u[4]}\n"
+            f"🌿 Конопля: {u[5]}\n"
+            f"🥮 Кексы: {u[6]}\n"
+            f"🚬 Косяки: {u[7]}\n"
+            f"❤️ Сытость: {u[8]}\n"
+            f"😵‍💫 Кайф: {u[9]}"
         )
 
-    # ---------- СЪЕСТЬ КЕКС ----------
-    if text.startswith("съесть"):
-        try:
-            n = int(text.split()[1])
-        except:
-            n = 0
-        if user_data["кексы"] < n:
-            return bot.reply_to(message, f"❌ {name}, у тебя нет {n} кексов!")
-        user_data["кексы"] -= n
-        user_data["сытость"] += n
-        save(chat_id, data)
-        return bot.reply_to(message, f"❤️ {name}, ты съел {n} кексов и +{n} сытости!")
+    if text.startswith("купить"):
+        n = int(text.split()[1]) if len(text.split()) > 1 else 1
+        cost = n * 10
+        if u[3] < cost:
+            return bot.reply_to(message, "❌ Нищета")
+        cursor.execute(
+            "UPDATE cannabis SET coins=coins-?, bushes=bushes+? WHERE chat_id=? AND user_id=?",
+            (cost, n, str(chat), str(user.id))
+        )
+        conn.commit()
+        bot.reply_to(message, f"🌱 Купил {n} кустов")
 
-    # ---------- ПРОДАТЬ КЕКСЫ ----------
-    if text.startswith("продать кексы"):
-        try:
-            n = int(text.split()[2])
-        except:
-            n = 0
-        if user_data["кексы"] < n:
-            return bot.reply_to(message, f"❌ {name}, у тебя нет {n} кексов!")
-        earned = n // 5
-        user_data["кексы"] -= n
-        user_data["коины"] += earned
-        save(chat_id, data)
-        return bot.reply_to(message, f"💰 {name}, ты продал {n} кексов и получил {earned} коинов!")
-
-    # ---------- КРАФТ КОСЯКОВ ----------
-    if text.startswith("крафт"):
-        try:
-            n = int(text.split()[1])
-        except:
-            n = 0
-        if user_data["конопля"] < n:
-            return bot.reply_to(message, f"❌ {name}, у тебя нет {n} конопли!")
-        user_data["конопля"] -= n
-        user_data["косяки"] += n
-        save(chat_id, data)
-        return bot.reply_to(message, f"🚬 {name}, ты скрутил {n} косяков!")
-
-    # ---------- ПОДЫМИТЬ ----------
     if text == "подымить":
-        last = user_data.get("последний_кайф")
-        if last:
-            last_dt = datetime.fromisoformat(last)
-            if now - last_dt < timedelta(hours=1):
-                remain = timedelta(hours=1) - (now - last_dt)
-                minutes = remain.seconds // 60
-                return bot.reply_to(message, f"⏳ {name}, еще {minutes} мин до следующего кайфа!")
-        effect = random.choices(
-            population=[-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5],
-            weights=[1,1,1,1,1,5,10,10,10,5,3],
-            k=1
-        )[0]
-        user_data["последний_кайф"] = now.isoformat()
-        save(chat_id, data)
-        return bot.reply_to(message, f"😵‍💫 {name}, твой кайф изменился на {effect}!")
+        if u[7] <= 0:
+            return bot.reply_to(message, "❌ Нет косяков")
+        effect = random.randint(-5, 5)
+        cursor.execute(
+            "UPDATE cannabis SET joints=joints-1, high=high+?, last_smoke=? WHERE chat_id=? AND user_id=?",
+            (effect, german_date().isoformat(), str(chat), str(user.id))
+        )
+        conn.commit()
+
+        if effect > 0:
+            msg = f"😵‍💫 {name}, ты кайфанул 🔥 Кайф +{effect}"
+        elif effect < 0:
+            msg = f"🤢 {name}, ты подавился 🤮 Кайф {effect}"
+        else:
+            msg = f"😐 {name}, вообще никак"
+
+        bot.reply_to(message, msg)
