@@ -1,4 +1,6 @@
 import sqlite3
+import os
+import json
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from plugins.common import get_name, german_date
 
@@ -7,7 +9,7 @@ conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
 # =========================
-# Создаём таблицу пользователей, если её нет
+# Создаем таблицу пользователей
 # =========================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
@@ -33,7 +35,23 @@ CREATE TABLE IF NOT EXISTS users (
 conn.commit()
 
 # =========================
-# БАЗОВЫЕ ФУНКЦИИ
+# ФАЙЛЫ ПАМЯТИ КАНАБИЗ
+# =========================
+def _cfile(chat_id):
+    return f"data/игра_{chat_id}.json"
+
+def load_cannabis(chat_id):
+    f = _cfile(chat_id)
+    if not os.path.exists(f):
+        return {}
+    try:
+        with open(f, "r", encoding="utf8") as file:
+            return json.load(file)
+    except:
+        return {}
+
+# =========================
+# ОБЩИЕ ФУНКЦИИ
 # =========================
 def ensure_user(chat_id, user):
     chat, uid = str(chat_id), str(user.id)
@@ -44,19 +62,18 @@ def ensure_user(chat_id, user):
     conn.commit()
 
 def update_stat(chat_id, user, key, delta):
-    ensure_user(chat_id, user)
     chat, uid = str(chat_id), str(user.id)
+    ensure_user(chat_id, user)
     cursor.execute(f"UPDATE users SET {key} = {key} + ? WHERE chat_id=? AND user_id=?", (delta, chat, uid))
     conn.commit()
 
 def update_date(chat_id, user, key):
-    ensure_user(chat_id, user)
     chat, uid = str(chat_id), str(user.id)
+    ensure_user(chat_id, user)
     cursor.execute(f"UPDATE users SET {key} = ? WHERE chat_id=? AND user_id=?", (german_date().isoformat(), chat, uid))
     conn.commit()
 
 def was_today(chat_id, user, key):
-    ensure_user(chat_id, user)
     chat, uid = str(chat_id), str(user.id)
     cursor.execute(f"SELECT {key} FROM users WHERE chat_id=? AND user_id=?", (chat, uid))
     row = cursor.fetchone()
@@ -79,15 +96,28 @@ def load_users(chat_id):
             "bushes": r[7],
             "high": r[8],
             "full": r[9],
-            "msg_count": r[10]
+            "msg_count": r[10],
+            "last_sisi": r[11],
+            "last_hui": r[12],
+            "last_klitor": r[13],
+            "last_beer": r[14],
+            "last_high": r[15],
         }
+
+    # подтягиваем данные из канабиза
+    cdata = load_cannabis(chat_id)
+    for uid, u in users.items():
+        if uid in cdata:
+            u["bushes"] = cdata[uid].get("кусты", u.get("bushes",0))
+            u["high"] = cdata[uid].get("кайф", u.get("high",0))
+            u["full"] = cdata[uid].get("сытость", u.get("full",0))
     return users
 
 def _format_klitor(mm: int):
     return f"{mm / 10:.1f}"
 
 # =========================
-# ТОП-КНОПКИ
+# ТОП С КНОПКАМИ
 # =========================
 def handle_top(bot, message):
     chat_id = str(message.chat.id)
@@ -125,12 +155,12 @@ def handle_top_callback(bot, call):
         return
 
     title, emoji, key = key_map[call.data]
-    top_list = sorted(users.values(), key=lambda x: x.get(key,0) or 0, reverse=True)[:10]
+    top_list = sorted(users.values(), key=lambda x: x.get(key,0), reverse=True)[:10]
 
     if key == "klitor":
         text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {_format_klitor(u[key])} см {emoji}" for i,u in enumerate(top_list))
     else:
-        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key] or 0} {emoji}" for i,u in enumerate(top_list))
+        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key]} {emoji}" for i,u in enumerate(top_list))
 
     bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id)
 
@@ -140,21 +170,22 @@ def handle_top_callback(bot, call):
 def handle_my(bot, message):
     chat_id = str(message.chat.id)
     user = message.from_user
-    ensure_user(chat_id, user)
     uid = str(user.id)
+    ensure_user(chat_id, user)
 
     cursor.execute("SELECT * FROM users WHERE chat_id=? AND user_id=?", (chat_id, uid))
     u = cursor.fetchone()
+
     txt = (
         f"📊 {u[2]}, твои размеры:\n\n"
         f"🍒 Сисечки: {u[3]} размера\n"
         f"🍌 Хуй: {u[4]} см\n"
         f"🍑 Клитор: {_format_klitor(u[5])} см\n"
-        f"🍺 Выпито пива: {u[6] or 0} л\n"
-        f"🌱 Кусты: {u[7] or 0}\n"
-        f"😵 Кайф: {u[8] or 0}\n"
-        f"❤️ Сытость: {u[9] or 0}\n"
-        f"💬 Сообщений: {u[10] or 0}"
+        f"🍺 Выпито пива: {u[6]} л\n"
+        f"🌱 Кусты: {u[7]}\n"
+        f"😵 Кайф: {u[8]}\n"
+        f"❤️ Сытость: {u[9]}\n"
+        f"💬 Сообщений: {u[10]}"
     )
     bot.reply_to(message, txt)
 
