@@ -1,10 +1,7 @@
 import os
 import telebot
 from triggers import TRIGGERS
-from plugins import (
-    sisi, hui, klitor, mut, top_plugin, kto,
-    bust_price, cannabis_game, minus, say, beer
-)
+from plugins import sisi, hui, klitor, mut, top_plugin, kto, bust_price, cannabis_game, minus, say, beer
 
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
@@ -25,99 +22,101 @@ PLUGINS = {
     "beer": beer,
 }
 
-# =========================
-# /my
-# =========================
+# =====================================================
+# /my — показать свои размеры/статистику
+# =====================================================
 @bot.message_handler(commands=["my"])
 def my_sizes(message):
-    top_plugin.handle_my(bot, message)
+    try:
+        top_plugin.handle_my(bot, message)
+    except Exception as e:
+        print(f"Ошибка handle_my: {e}")
 
-# =========================
-# Stars pre-checkout
-# =========================
+# =====================================================
+# ⭐ Stars pre-checkout
+# =====================================================
 @bot.pre_checkout_query_handler(func=lambda q: True)
 def checkout(pre_checkout_query):
     bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
-# =========================
-# Успешная оплата
-# =========================
+# =====================================================
+# 💸 Успешная оплата
+# =====================================================
 @bot.message_handler(content_types=['successful_payment'])
 def payment_handler(message):
     for plugin in PLUGINS.values():
         if hasattr(plugin, "handle_successful"):
-            plugin.handle_successful(bot, message)
+            try:
+                plugin.handle_successful(bot, message)
+            except Exception as e:
+                print(f"Ошибка handle_successful в {plugin}: {e}")
 
-# =========================
-# Callback топа
-# =========================
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    # Топ
-    if call.data.startswith("top_"):
+# =====================================================
+# 🏆 CALLBACK КНОПКИ ТОПА
+# =====================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith("top_"))
+def top_callbacks(call):
+    try:
         top_plugin.handle_top_callback(bot, call)
-        return
-    # Реклама
-    try:
-        import ads
-        ads.handle_callback(bot, call)
-    except:
-        pass
+    except Exception as e:
+        print(f"Ошибка handle_top_callback: {e}")
 
-# =========================
-# Счётчик сообщений для топа общения
-# =========================
-@bot.message_handler(func=lambda m: True, content_types=["text"])
-def count_messages(message):
-    try:
-        top_plugin.count_message(message.chat.id, message.from_user)
-    except:
-        pass
-
-# =========================
-# Главный обработчик сообщений
-# =========================
+# =====================================================
+# 🔥 ГЛАВНЫЙ ОБРАБОТЧИК
+# =====================================================
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all(message):
     plugin_called = False
+
+    # ---------- Счёт сообщений для топа общения ----------
+    if message.content_type == "text":
+        try:
+            top_plugin.count_message(message.chat.id, message.from_user)
+        except Exception as e:
+            print(f"Ошибка count_message: {e}")
 
     # ---------- Фото ----------
     if message.content_type == "photo":
         for plugin in PLUGINS.values():
             if hasattr(plugin, "handle"):
-                plugin.handle(bot, message)
-                plugin_called = True
+                try:
+                    plugin.handle(bot, message)
+                    plugin_called = True
+                except Exception as e:
+                    print(f"Ошибка handle фото в {plugin}: {e}")
 
     # ---------- Текст ----------
-    else:
-        text = (message.text or "").lower().strip()
+    if message.content_type == "text":
+        text = message.text
         if not text:
             return
 
-        # Проверка команд без /
-        if text.startswith("топ") or text.startswith("рейтинг"):
-            PLUGINS["top_plugin"].handle(bot, message)
-            plugin_called = True
-        elif text.startswith("мои") or text.startswith("мои размеры"):
-            PLUGINS["top_plugin"].handle_my(bot, message)
-            plugin_called = True
+        cmd_raw = text.split()[0].lower()
+        cmd = cmd_raw.split("@")[0]
 
-        # Проверка команд с /
-        else:
-            cmd_raw = text.split()[0].lower()
-            cmd = cmd_raw.split("@")[0]
-            plugin_name = TRIGGERS.get(cmd)
-            if plugin_name and plugin_name in PLUGINS:
+        plugin_name = TRIGGERS.get(cmd)
+        if plugin_name and plugin_name in PLUGINS:
+            try:
                 PLUGINS[plugin_name].handle(bot, message)
                 plugin_called = True
-            else:
-                # обычный текст → на все плагины
-                for plugin in PLUGINS.values():
-                    if hasattr(plugin, "handle"):
+            except Exception as e:
+                print(f"Ошибка handle команды {plugin_name}: {e}")
+        else:
+            # обычный текст → на все плагины
+            for plugin in PLUGINS.values():
+                if hasattr(plugin, "handle"):
+                    try:
                         plugin.handle(bot, message)
                         plugin_called = True
+                    except Exception as e:
+                        print(f"Ошибка handle текста в {plugin}: {e}")
 
-# =========================
+# =====================================================
+# Запуск polling
+# =====================================================
 if __name__ == "__main__":
     print("Бот запущен...")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    try:
+        bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except Exception as e:
+        print("Ошибка polling:", e)
