@@ -1,5 +1,4 @@
 import sqlite3
-import datetime
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from plugins.common import get_name, german_date
 
@@ -34,26 +33,37 @@ CREATE TABLE IF NOT EXISTS users (
 conn.commit()
 
 # =========================
-# ОСНОВНЫЕ ФУНКЦИИ
+# Основные функции
 # =========================
 def ensure_user(chat_id, user):
     chat, uid = str(chat_id), str(user.id)
     name = get_name(user)
-    cursor.execute("INSERT OR IGNORE INTO users(chat_id, user_id, name) VALUES (?, ?, ?)",
-                   (chat, uid, name))
-    cursor.execute("UPDATE users SET name=? WHERE chat_id=? AND user_id=?", (name, chat, uid))
+    cursor.execute(
+        "INSERT OR IGNORE INTO users(chat_id, user_id, name) VALUES (?, ?, ?)",
+        (chat, uid, name)
+    )
+    cursor.execute(
+        "UPDATE users SET name=? WHERE chat_id=? AND user_id=?",
+        (name, chat, uid)
+    )
     conn.commit()
 
 def update_stat(chat_id, user, key, delta):
-    chat, uid = str(chat_id), str(user.id)
     ensure_user(chat_id, user)
-    cursor.execute(f"UPDATE users SET {key} = {key} + ? WHERE chat_id=? AND user_id=?", (delta, chat, uid))
+    chat, uid = str(chat_id), str(user.id)
+    cursor.execute(
+        f"UPDATE users SET {key} = {key} + ? WHERE chat_id=? AND user_id=?",
+        (delta, chat, uid)
+    )
     conn.commit()
 
 def update_date(chat_id, user, key):
-    chat, uid = str(chat_id), str(user.id)
     ensure_user(chat_id, user)
-    cursor.execute(f"UPDATE users SET {key} = ? WHERE chat_id=? AND user_id=?", (german_date().isoformat(), chat, uid))
+    chat, uid = str(chat_id), str(user.id)
+    cursor.execute(
+        f"UPDATE users SET {key} = ? WHERE chat_id=? AND user_id=?",
+        (german_date().isoformat(), chat, uid)
+    )
     conn.commit()
 
 def was_today(chat_id, user, key):
@@ -133,14 +143,18 @@ def handle_top_callback(bot, call):
         return
 
     title, emoji, key = key_map[call.data]
-    top_list = sorted(users.values(), key=lambda x: x.get(key,0), reverse=True)[:10]
+    top_list = sorted(users.values(), key=lambda x: x.get(key, 0), reverse=True)[:10]
 
     if key == "klitor":
-        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {_format_klitor(u[key])} см {emoji}" for i,u in enumerate(top_list))
+        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {_format_klitor(u[key])} см {emoji}" for i, u in enumerate(top_list))
     else:
-        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key]} {emoji}" for i,u in enumerate(top_list))
+        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key]} {emoji}" for i, u in enumerate(top_list))
 
-    bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id)
+    # безопасное редактирование сообщения
+    try:
+        bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id)
+    except:
+        bot.send_message(chat_id, text)
 
 # =========================
 # МОЙ ТОП
@@ -148,11 +162,13 @@ def handle_top_callback(bot, call):
 def handle_my(bot, message):
     chat_id = str(message.chat.id)
     user = message.from_user
-    uid = str(user.id)
     ensure_user(chat_id, user)
+    uid = str(user.id)
 
     cursor.execute("SELECT * FROM users WHERE chat_id=? AND user_id=?", (chat_id, uid))
     u = cursor.fetchone()
+    if not u:
+        return
 
     txt = (
         f"📊 {u[2]}, твои размеры:\n\n"
@@ -182,5 +198,8 @@ def handle(bot, message):
 # =========================
 def count_message(chat_id, user):
     ensure_user(chat_id, user)
-    cursor.execute("UPDATE users SET msg_count = msg_count + 1 WHERE chat_id=? AND user_id=?", (str(chat_id), str(user.id)))
+    cursor.execute(
+        "UPDATE users SET msg_count = msg_count + 1 WHERE chat_id=? AND user_id=?",
+        (str(chat_id), str(user.id))
+    )
     conn.commit()
