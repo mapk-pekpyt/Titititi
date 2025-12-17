@@ -1,10 +1,8 @@
-# plugins/db_top_plugin.py
 import sqlite3
-import datetime
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from plugins.common import get_name, german_date
 
 DB_FILE = "data/data.db"
-
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 cursor = conn.cursor()
 
@@ -29,7 +27,6 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-
 # =========================
 # Основные функции
 # =========================
@@ -42,20 +39,17 @@ def ensure_user(chat_id, user):
     cursor.execute("UPDATE users SET name=? WHERE chat_id=? AND user_id=?", (name, chat, uid))
     conn.commit()
 
-
 def update_stat(chat_id, user, key, delta):
     chat, uid = str(chat_id), str(user.id)
     ensure_user(chat_id, user)
     cursor.execute(f"UPDATE users SET {key} = {key} + ? WHERE chat_id=? AND user_id=?", (delta, chat, uid))
     conn.commit()
 
-
 def update_date(chat_id, user, key):
     chat, uid = str(chat_id), str(user.id)
     ensure_user(chat_id, user)
     cursor.execute(f"UPDATE users SET {key} = ? WHERE chat_id=? AND user_id=?", (german_date().isoformat(), chat, uid))
     conn.commit()
-
 
 def was_today(chat_id, user, key):
     chat, uid = str(chat_id), str(user.id)
@@ -64,7 +58,6 @@ def was_today(chat_id, user, key):
     if not row or not row[0]:
         return False
     return row[0] == german_date().isoformat()
-
 
 def load_users(chat_id):
     chat = str(chat_id)
@@ -85,40 +78,51 @@ def load_users(chat_id):
         }
     return users
 
-
 def _format_klitor(mm: int):
     return f"{mm / 10:.1f}"
 
-
 # =========================
-# ТОПЫ
+# ТОП С КНОПКАМИ
 # =========================
 
 def handle_top(bot, message):
     chat_id = str(message.chat.id)
+
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("🏆 Сисечки", callback_data="top_sisi"),
+        InlineKeyboardButton("🍌 Хуй", callback_data="top_hui"),
+        InlineKeyboardButton("🍑 Клитор", callback_data="top_klitor"),
+        InlineKeyboardButton("🍺 Алкаши", callback_data="top_beer")
+    )
+
+    bot.send_message(chat_id, "Выбери топ, который хочешь посмотреть:", reply_markup=markup)
+
+def handle_top_callback(bot, call):
+    chat_id = str(call.message.chat.id)
     users = load_users(chat_id)
     if not users:
-        return bot.reply_to(message, "Никто ещё не играл 😿")
+        return bot.answer_callback_query(call.id, "Никто ещё не играл 😿")
 
-    # Топ сисек
-    sisi_list = sorted(users.values(), key=lambda x: x.get("sisi",0), reverse=True)[:3]
-    txt1 = "🏆 Топ сисечек:\n" + "\n".join(f"{i+1}. {u['name']} — {u['sisi']} размер 🍒" for i,u in enumerate(sisi_list))
+    key_map = {
+        "top_sisi": ("🏆 Топ сисечек:", "🍒", "sisi"),
+        "top_hui": ("🍌 Топ достоинств:", "🍌", "hui"),
+        "top_klitor": ("🍑 Топ клиторов:", "🍑", "klitor"),
+        "top_beer": ("🍺 Топ алкашей:", "🍺", "beer")
+    }
 
-    # Топ хуев
-    hui_list = sorted(users.values(), key=lambda x: x.get("hui",0), reverse=True)[:3]
-    txt2 = "🍌 Топ достоинств:\n" + "\n".join(f"{i+1}. {u['name']} — {u['hui']} см 🍌" for i,u in enumerate(hui_list))
+    if call.data not in key_map:
+        return
 
-    # Топ клиторов
-    klit_list = sorted(users.values(), key=lambda x: x.get("klitor",0), reverse=True)[:3]
-    txt3 = "🍑 Топ клиторов:\n" + "\n".join(f"{i+1}. {u['name']} — {_format_klitor(u['klitor'])} см 🍑" for i,u in enumerate(klit_list))
+    title, emoji, key = key_map[call.data]
+    top_list = sorted(users.values(), key=lambda x: x.get(key,0), reverse=True)[:3]
 
-    # Топ алкашей
-    beer_list = sorted(users.values(), key=lambda x: x.get("beer",0), reverse=True)[:3]
-    txt4 = "🍺 Топ алкашей:\n" + "\n".join(f"{i+1}. {u['name']} — {u.get('beer',0)} л 🍺" for i,u in enumerate(beer_list))
+    if key == "klitor":
+        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {_format_klitor(u[key])} см {emoji}" for i,u in enumerate(top_list))
+    else:
+        text = f"{title}\n" + "\n".join(f"{i+1}. {u['name']} — {u[key]} {emoji}" for i,u in enumerate(top_list))
 
-    for txt in (txt1, txt2, txt3, txt4):
-        bot.reply_to(message, txt)
-
+    bot.edit_message_text(text, chat_id=chat_id, message_id=call.message.message_id)
 
 def handle_my(bot, message):
     chat_id = str(message.chat.id)
@@ -137,7 +141,6 @@ def handle_my(bot, message):
         f"🍺 Выпито пива: {u[6]} л"
     )
     bot.reply_to(message, txt)
-
 
 def handle(bot, message):
     text = (message.text or "").lower()
