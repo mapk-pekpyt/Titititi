@@ -1,7 +1,6 @@
-# plugins/hui_db.py
 from telebot.types import LabeledPrice
 from plugins.common import weighted_random, get_name
-from plugins import db_top_plugin as top_plugin
+from plugins import top_plugin
 from plugins.bust_price import load_price
 
 PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
@@ -22,8 +21,8 @@ def handle(bot, message):
     # =========================
     if cmd in ("/hui", "хуй"):
         if top_plugin.was_today(chat, user, "last_hui"):
-            cursor_data = top_plugin.load_users(chat)
-            current = cursor_data[str(user.id)]["hui"]
+            data = top_plugin.load_users(chat)
+            current = data[str(user.id)]["hui"]
             return bot.reply_to(
                 message,
                 f"{name}, шалунишка ты мой, думал не замечу? "
@@ -34,13 +33,10 @@ def handle(bot, message):
         top_plugin.update_stat(chat, user, "hui", delta)
         top_plugin.update_date(chat, user, "last_hui")
 
-        cursor_data = top_plugin.load_users(chat)
-        new_size = cursor_data[str(user.id)]["hui"]
-
+        new_size = top_plugin.load_users(chat)[str(user.id)]["hui"]
         bot.reply_to(
             message,
-            f"{name}, твой хуй вырос на +{delta} см, "
-            f"теперь твой болт {new_size} см 😳🍌"
+            f"{name}, твой хуй вырос на +{delta} см, теперь твой болт {new_size} см 😳🍌"
         )
 
     # =========================
@@ -85,24 +81,15 @@ def handle(bot, message):
         except Exception as e:
             bot.reply_to(message, f"❌ Ошибка оплаты: {e}")
 
-
 def handle_successful(bot, message):
     if not getattr(message, "successful_payment", None):
         return
 
-    payload = (
-        message.successful_payment.invoice_payload
-        if hasattr(message.successful_payment, "invoice_payload")
-        else ""
-    )
+    payload = message.successful_payment.invoice_payload
     if not payload.startswith("boost:"):
         return
 
-    parts = payload.split(":")
-    if len(parts) != 5:
-        return
-
-    _, chat_s, user_s, stat, n_s = parts
+    _, chat_s, user_s, stat, n_s = payload.split(":")
     if stat != "hui":
         return
 
