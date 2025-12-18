@@ -103,4 +103,34 @@ TRIGGERS = {
     "продать кексы": "cannabis_game",
     "крафт": "cannabis_game",
     "подымить": "cannabis_game",
+    
+    # --- Экономика ---
+    "баланс": "cannabis_game",
+    "собрать": "cannabis_game",
+    "испечь": "cannabis_game",
+    "крафт": "cannabis_game",
+    "съесть": "cannabis_game",
+
+    # --- Солдаты ---
+    "нанять": "cannabis_game",
+    "лечить": "cannabis_game",
+    "лечить всех": "cannabis_game",
+
+    # --- Рейд ---
+    "рейд": "cannabis_game",
+    "напасть": "cannabis_game",
+
+    # --- Кланы ---
+    "создать клан": "cannabis_game",
+    "вступить клан": "cannabis_game",
+    "клан": "cannabis_game",
+    "назначить": "cannabis_game",
+    "выдать": "cannabis_game",
+    
+    # --- Клановые войны ---
+    "кв+": "cannabis_game",
+
+    # --- Топ фермеров ---
+    "топ фермеров": "cannabis_game",
+    "топ фермер": "cannabis_game",
 }
