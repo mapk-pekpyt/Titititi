@@ -68,7 +68,6 @@ def cooldown_passed(last_time, hours=1):
 def handle(bot, message):
     user = message.from_user
     text = (message.text or "").lower().strip()
-    name = get_name(user)
     u = get_user(user)
     now = datetime.now()
 
@@ -76,7 +75,7 @@ def handle(bot, message):
     if text == "баланс":
         return bot.reply_to(
             message,
-            f"🌿 {name}\n\n"
+            f"🌿 {u[1]}\n\n"
             f"💰 Коины: {u[2]}\n"
             f"🌱 Кусты: {u[3]}\n"
             f"🌿 Конопля: {u[4]}\n"
