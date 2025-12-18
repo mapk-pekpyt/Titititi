@@ -11,41 +11,49 @@ cursor = conn.cursor()
 # ================== TABLE ==================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS cannabis (
-    chat_id TEXT,
-    user_id TEXT,
+    user_id TEXT PRIMARY KEY,
     name TEXT,
-    coins INTEGER DEFAULT 10,
+    coins INTEGER DEFAULT 1000,
     bushes INTEGER DEFAULT 0,
     weed INTEGER DEFAULT 0,
     cakes INTEGER DEFAULT 0,
     joints INTEGER DEFAULT 0,
     hunger INTEGER DEFAULT 0,
+    high INTEGER DEFAULT 0,
     last_collect TEXT,
-    last_high TEXT,
-    PRIMARY KEY (chat_id, user_id)
+    last_eat TEXT,
+    last_smoke TEXT
 )
 """)
 conn.commit()
 
 # ================== HELPERS ==================
-def ensure(chat_id, user):
+def ensure_user(user):
     cursor.execute(
-        "INSERT OR IGNORE INTO cannabis(chat_id,user_id,name) VALUES (?,?,?)",
-        (str(chat_id), str(user.id), get_name(user))
+        "INSERT OR IGNORE INTO cannabis(user_id,name) VALUES (?,?)",
+        (str(user.id), get_name(user))
     )
     cursor.execute(
-        "UPDATE cannabis SET name=? WHERE chat_id=? AND user_id=?",
-        (get_name(user), str(chat_id), str(user.id))
+        "UPDATE cannabis SET name=? WHERE user_id=?",
+        (get_name(user), str(user.id))
     )
     conn.commit()
 
-def get(chat_id, user):
-    ensure(chat_id, user)
+def get_user(user):
+    ensure_user(user)
     cursor.execute(
-        "SELECT * FROM cannabis WHERE chat_id=? AND user_id=?",
-        (str(chat_id), str(user.id))
+        "SELECT * FROM cannabis WHERE user_id=?",
+        (str(user.id),)
     )
     return cursor.fetchone()
+
+def update_user(user_id, field, delta):
+    cursor.execute(f"UPDATE cannabis SET {field}={field}+? WHERE user_id=?", (delta, str(user_id)))
+    conn.commit()
+
+def set_user_time(user_id, field):
+    cursor.execute(f"UPDATE cannabis SET {field}=? WHERE user_id=?", (datetime.now().isoformat(), str(user_id)))
+    conn.commit()
 
 def cooldown_passed(last_time, hours=1):
     if not last_time:
@@ -54,45 +62,44 @@ def cooldown_passed(last_time, hours=1):
 
 # ================== GAME ==================
 def handle(bot, message):
-    chat_id = message.chat.id
     user = message.from_user
     text = (message.text or "").lower().strip()
     name = get_name(user)
 
-    u = get(chat_id, user)
+    u = get_user(user)
 
     # -------- БАЛАНС --------
     if text == "баланс":
         return bot.reply_to(
             message,
             f"🌿 {name}\n\n"
-            f"💰 Коины: {u[3]}\n"
-            f"🌱 Кусты: {u[4]}\n"
-            f"🌿 Конопля: {u[5]}\n"
-            f"🥮 Кексы: {u[6]}\n"
-            f"🚬 Косяки: {u[7]}\n"
-            f"❤️ Сытость: {u[8]}"
+            f"💰 Коины: {u[2]}\n"
+            f"🌱 Кусты: {u[3]}\n"
+            f"🌿 Конопля: {u[4]}\n"
+            f"🥮 Кексы: {u[5]}\n"
+            f"🚬 Косяки: {u[6]}\n"
+            f"❤️ Сытость: {u[7]}\n"
+            f"😵 Кайф: {u[8]}"
         )
 
     # -------- КУПИТЬ КУСТЫ --------
     if text.startswith("купить"):
-        n = int(text.split()[1]) if len(text.split()) > 1 else 1
+        try:
+            n = int(text.split()[1])
+        except:
+            n = 1
         cost = n * 10
 
-        if u[3] < cost:
+        if u[2] < cost:
             return bot.reply_to(message, "❌ Не хватает коинов")
 
-        cursor.execute("""
-            UPDATE cannabis
-            SET coins = coins - ?, bushes = bushes + ?
-            WHERE chat_id=? AND user_id=?
-        """, (cost, n, str(chat_id), str(user.id)))
-        conn.commit()
+        update_user(user.id, "coins", -cost)
+        update_user(user.id, "bushes", n)
 
-        # ⬆️ В ТОП
-        top_plugin.update_stat(chat_id, user, "bushes", n)
+        # Обновляем топ только кусты
+        top_plugin.update_stat("global", user, "bushes", n)
 
-        return bot.reply_to(message, f"🌱 Куплено {n} кустов")
+        return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} коинов")
 
     # -------- СБОР (РАЗ В ЧАС) --------
     if text == "собрать":
@@ -100,70 +107,74 @@ def handle(bot, message):
             mins = int((timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[9]))).seconds / 60)
             return bot.reply_to(message, f"⏳ Рано, подожди {mins} мин")
 
-        if u[4] <= 0:
+        if u[3] <= 0:
             return bot.reply_to(message, "❌ У тебя нет кустов")
 
-        gain = random.randint(1, u[4])
-
-        cursor.execute("""
-            UPDATE cannabis
-            SET weed = weed + ?, last_collect=?
-            WHERE chat_id=? AND user_id=?
-        """, (gain, datetime.now().isoformat(), str(chat_id), str(user.id)))
-        conn.commit()
-
+        gain = random.randint(1, u[3])
+        update_user(user.id, "weed", gain)
+        set_user_time(user.id, "last_collect")
         return bot.reply_to(message, f"🌿 Собрано {gain} конопли")
 
     # -------- ПРОДАТЬ ТРАВУ --------
     if text.startswith("продать ") and not text.startswith("продать кексы"):
-        n = int(text.split()[1])
-        if u[5] < n:
+        parts = text.split()
+        n = int(parts[1])
+        if u[4] < n:
             return bot.reply_to(message, "❌ Нет конопли")
-
         earned = n // 10
-        cursor.execute("""
-            UPDATE cannabis
-            SET weed = weed - ?, coins = coins + ?
-            WHERE chat_id=? AND user_id=?
-        """, (n, earned, str(chat_id), str(user.id)))
-        conn.commit()
-
+        update_user(user.id, "weed", -n)
+        update_user(user.id, "coins", earned)
         return bot.reply_to(message, f"💰 Продано {n} → +{earned} коинов")
+
+    # -------- ПРОДАТЬ КЕКСЫ --------
+    if text.startswith("продать кексы"):
+        parts = text.split()
+        n = int(parts[2])
+        if u[5] < n:
+            return bot.reply_to(message, "❌ Нет кексов")
+        earned = n // 5
+        update_user(user.id, "cakes", -n)
+        update_user(user.id, "coins", earned)
+        return bot.reply_to(message, f"💰 Продал {n} кексов → +{earned} коинов")
 
     # -------- КРАФТ КОСЯКОВ --------
     if text.startswith("крафт"):
-        n = int(text.split()[1])
-        if u[5] < n:
+        try:
+            n = int(text.split()[1])
+        except:
+            n = 1
+        if u[4] < n:
             return bot.reply_to(message, "❌ Нет конопли")
-
-        cursor.execute("""
-            UPDATE cannabis
-            SET weed = weed - ?, joints = joints + ?
-            WHERE chat_id=? AND user_id=?
-        """, (n, n, str(chat_id), str(user.id)))
-        conn.commit()
-
+        update_user(user.id, "weed", -n)
+        update_user(user.id, "joints", n)
         return bot.reply_to(message, f"🚬 Скрафтил {n} косяков")
 
-    # -------- ПОДЫМИТЬ (РАЗ В ЧАС) --------
-    if text == "подымить":
-        if u[7] <= 0:
-            return bot.reply_to(message, "❌ Нет косяков")
-
+    # -------- ЕСТЬ КЕКС --------
+    if text.startswith("съесть"):
+        try:
+            n = int(text.split()[1])
+        except:
+            n = 1
+        if u[5] < n:
+            return bot.reply_to(message, "❌ Нет кексов")
         if not cooldown_passed(u[10]):
             mins = int((timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[10]))).seconds / 60)
+            return bot.reply_to(message, f"⏳ Рано, подожди {mins} мин")
+        update_user(user.id, "cakes", -n)
+        update_user(user.id, "hunger", n)
+        set_user_time(user.id, "last_eat")
+        return bot.reply_to(message, f"❤️ Сытость +{n}")
+
+    # -------- ДУНУТЬ --------
+    if text == "подымить":
+        if u[6] <= 0:
+            return bot.reply_to(message, "❌ Нет косяков")
+        if not cooldown_passed(u[11]):
+            mins = int((timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[11]))).seconds / 60)
             return bot.reply_to(message, f"⏳ Подожди {mins} мин")
-
         effect = random.randint(1, 5)
-
-        cursor.execute("""
-            UPDATE cannabis
-            SET joints=joints-1, last_high=?
-            WHERE chat_id=? AND user_id=?
-        """, (datetime.now().isoformat(), str(chat_id), str(user.id)))
-        conn.commit()
-
-        # ⬆️ В ТОП КАЙФА
-        top_plugin.update_stat(chat_id, user, "high", effect)
-
+        update_user(user.id, "joints", -1)
+        update_user(user.id, "high", effect)
+        set_user_time(user.id, "last_smoke")
+        # Обновляем топ по кайфу если нужно
         return bot.reply_to(message, f"😵‍💫 Кайф +{effect}")
