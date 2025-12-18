@@ -179,7 +179,7 @@ def handle(bot, message):
         return bot.reply_to(message, f"🚬 Скрафтил {n} косяков")
 
     # -------- ПОДЫМИТЬ (раз в час) --------
-    if text == "подымить":
+    if text == "дунуть":
         if u[6] <= 0:
             return bot.reply_to(message, "❌ Нет косяков")
         if not cooldown(u[11]):
