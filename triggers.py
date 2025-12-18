@@ -93,44 +93,36 @@ TRIGGERS = {
     # пиво
       "/выпить пива": "beer",
     "долить пива": "beer",
+    
     # ================= CANNABIS GAME =================
     "баланс": "cannabis_game",
     "купить": "cannabis_game",
     "собрать": "cannabis_game",
     "продать": "cannabis_game",
     "испечь": "cannabis_game",
-    "съесть": "cannabis_game",
-    "продать кексы": "cannabis_game",
-    "крафт": "cannabis_game",
-    "подымить": "cannabis_game",
-    
-    # --- Экономика ---
-    "баланс": "cannabis_game",
-    "собрать": "cannabis_game",
-    "испечь": "cannabis_game",
     "крафт": "cannabis_game",
     "съесть": "cannabis_game",
+    "дунуть": "cannabis_game",
 
-    # --- Солдаты ---
+    # ================= АРМИЯ =================
     "нанять": "cannabis_game",
     "лечить": "cannabis_game",
-    "лечить всех": "cannabis_game",
+    "наемники": "cannabis_game",
 
-    # --- Рейд ---
+    # ================= РЕЙДЫ =================
     "рейд": "cannabis_game",
     "напасть": "cannabis_game",
 
-    # --- Кланы ---
-    "создать клан": "cannabis_game",
-    "вступить клан": "cannabis_game",
+    # ================= КЛАНЫ =================
     "клан": "cannabis_game",
+    "создать": "cannabis_game",
+    "вступить": "cannabis_game",
     "назначить": "cannabis_game",
     "выдать": "cannabis_game",
-    
-    # --- Клановые войны ---
+
+    # ================= КВ =================
     "кв+": "cannabis_game",
 
-    # --- Топ фермеров ---
-    "топ фермеров": "cannabis_game",
-    "топ фермер": "cannabis_game",
+    # ================= ТОПЫ =================
+    "топ": "cannabis_game",
 }
