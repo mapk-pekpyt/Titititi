@@ -58,8 +58,13 @@ def set_time(user_id, field):
 
 def cooldown(last_time, hours=1):
     if not last_time:
-        return True
-    return datetime.now() - datetime.fromisoformat(last_time) >= timedelta(hours=hours)
+        return True, 0
+    dt = datetime.fromisoformat(last_time)
+    remaining = timedelta(hours=hours) - (datetime.now() - dt)
+    if remaining.total_seconds() <= 0:
+        return True, 0
+    else:
+        return False, int(remaining.total_seconds() // 60)
 
 def money_word(n):
     if n % 10 == 1 and n % 100 != 11:
@@ -102,10 +107,7 @@ def handle(bot, message):
         if money < cost:
             return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
 
-        # шанс облавы
-        if random.random() < 0.1:
-            return bot.reply_to(message, f"🚨 Облава! Ты потерял {n} кустов и денег не получил")
-
+        # Покупка всегда работает, шанс облавы отключён
         add(user.id, "money", -cost)
         add(user.id, "bushes", n)
         return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} {money_word(cost)}")
@@ -115,8 +117,9 @@ def handle(bot, message):
         if bushes <= 0:
             return bot.reply_to(message, "❌ Нет кустов")
 
-        if not cooldown(u[9], 1):
-            return bot.reply_to(message, "⏳ Можно раз в час")
+        ready, mins = cooldown(u[9], 1)
+        if not ready:
+            return bot.reply_to(message, f"⏳ Можно собрать через {mins} мин")
 
         gain = random.randint(1, bushes)
         add(user.id, "weed", gain)
@@ -128,10 +131,6 @@ def handle(bot, message):
         n = int(text.split()[1])
         if weed < n:
             return bot.reply_to(message, f"❌ Ты не можешь впарить {n}, не хватает {n - weed}")
-
-        if random.random() < 0.1:
-            add(user.id, "weed", -n)
-            return bot.reply_to(message, f"🚨 Подстава! Ты потерял {n} грамм и денег не получил")
 
         earn = n * 1
         add(user.id, "weed", -n)
@@ -148,10 +147,6 @@ def handle(bot, message):
         if cakes < n:
             return bot.reply_to(message, f"❌ Не хватает {n - cakes} кексов")
 
-        if random.random() < 0.12:
-            add(user.id, "cakes", -n)
-            return bot.reply_to(message, f"🚨 Подстава! Ты потерял {n} кексов и денег не получил")
-
         earn = n * 5
         add(user.id, "cakes", -n)
         add(user.id, "money", earn)
@@ -166,10 +161,6 @@ def handle(bot, message):
         n = int(parts[2])
         if joints < n:
             return bot.reply_to(message, f"❌ Не хватает {n - joints} косяков")
-
-        if random.random() < 0.15:
-            add(user.id, "joints", -n)
-            return bot.reply_to(message, f"🚨 Подстава! Ты потерял {n} косяков и денег не получил")
 
         earn = n * 3
         add(user.id, "joints", -n)
@@ -211,8 +202,9 @@ def handle(bot, message):
         if joints <= 0:
             return bot.reply_to(message, "❌ Нет косяков")
 
-        if not cooldown(u[10], 1):
-            return bot.reply_to(message, "⏳ Можно раз в час")
+        ready, mins = cooldown(u[10], 1)
+        if not ready:
+            return bot.reply_to(message, f"⏳ Можно дунуть через {mins} мин")
 
         add(user.id, "joints", -1)
         if random.random() < 0.7:
