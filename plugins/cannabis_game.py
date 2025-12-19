@@ -6,28 +6,37 @@ DB = "data/data.db"
 conn = sqlite3.connect(DB, check_same_thread=False)
 cursor = conn.cursor()
 
-# ================== TABLE ==================
+# ================== TABLE (БЕЗ ЛОМАНИЯ СТАРОЙ) ==================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS cannabis (
     user_id TEXT PRIMARY KEY,
     name TEXT,
-    money INTEGER DEFAULT 1000,
-    bushes INTEGER DEFAULT 0,
-    weed INTEGER DEFAULT 0,
-    cakes INTEGER DEFAULT 0,
-    joints INTEGER DEFAULT 0,
-    hunger INTEGER DEFAULT 0,
-    high INTEGER DEFAULT 0,
+    money INTEGER,
+    bushes INTEGER,
+    weed INTEGER,
+    cakes INTEGER,
+    joints INTEGER,
+    hunger INTEGER,
+    high INTEGER,
     last_collect TEXT,
     last_smoke TEXT
 )
 """)
 conn.commit()
 
+# ================== FIX OLD DATA ==================
+cursor.execute("""
+UPDATE cannabis
+SET money = 1000
+WHERE money IS NULL OR typeof(money) != 'integer'
+""")
+conn.commit()
+
 # ================== HELPERS ==================
 def ensure(user):
     cursor.execute(
-        "INSERT OR IGNORE INTO cannabis(user_id,name) VALUES (?,?)",
+        "INSERT OR IGNORE INTO cannabis(user_id, name, money, bushes, weed, cakes, joints, hunger, high) "
+        "VALUES (?, ?, 1000, 0, 0, 0, 0, 0, 0)",
         (str(user.id), get_name(user))
     )
     cursor.execute(
@@ -38,10 +47,12 @@ def ensure(user):
 
 def get(user):
     ensure(user)
-    cursor.execute(
-        "SELECT * FROM cannabis WHERE user_id=?",
-        (str(user.id),)
-    )
+    cursor.execute("""
+        SELECT 
+            user_id, name, money, bushes, weed, cakes, joints, hunger, high, last_collect, last_smoke
+        FROM cannabis
+        WHERE user_id=?
+    """, (str(user.id),))
     return cursor.fetchone()
 
 def cooldown(last, hours=1):
@@ -73,7 +84,7 @@ def handle(bot, message):
         return
 
     # -------- КУПИТЬ --------
-    if parts[0] == "купить":
+    if parts and parts[0] == "купить":
         n = int(parts[1]) if len(parts) > 1 else 1
         cost = n * 10
         if n <= 0 or u[2] < cost:
@@ -104,8 +115,8 @@ def handle(bot, message):
         bot.reply_to(message, f"🌿 Собрано {gain} конопли")
         return
 
-    # -------- ПРОДАТЬ КОНОПЛЮ --------
-    if parts[0] == "продать" and len(parts) == 2:
+    # -------- ПРОДАТЬ --------
+    if parts and parts[0] == "продать" and len(parts) == 2:
         n = int(parts[1])
         if n <= 0 or u[4] < n:
             bot.reply_to(message, "❌ Нечего продавать")
@@ -120,21 +131,18 @@ def handle(bot, message):
         return
 
     # -------- КРАФТ --------
-    if parts[0] == "крафт":
+    if parts and parts[0] == "крафт":
         n = int(parts[1])
         if n <= 0 or u[4] < n:
             bot.reply_to(message, "❌ Нет конопли")
             return
-        good = 0
-        for _ in range(n):
-            if random.random() > 0.4:
-                good += 1
+        good = sum(1 for _ in range(n) if random.random() > 0.4)
         cursor.execute(
             "UPDATE cannabis SET weed=weed-?, joints=joints+? WHERE user_id=?",
             (n, good, str(user.id))
         )
         conn.commit()
-        bot.reply_to(message, f"🚬 Скрутил {good}, остальное рассыпалось")
+        bot.reply_to(message, f"🚬 Скрутил {good}, остальное развалилось")
         return
 
     # -------- ДУНУТЬ --------
@@ -151,11 +159,10 @@ def handle(bot, message):
             (effect, datetime.now().isoformat(), str(user.id))
         )
         conn.commit()
-
-        if effect > 0:
-            bot.reply_to(message, f"🔥 Ты улетел 😵‍💫 (+{effect})")
-        elif effect < 0:
-            bot.reply_to(message, f"🤢 Подавился дымом ({effect})")
-        else:
-            bot.reply_to(message, "😐 Ни о чём")
+        bot.reply_to(
+            message,
+            f"🔥 Ты улетел 😵‍💫 (+{effect})" if effect > 0 else
+            f"🤢 Подавился дымом ({effect})" if effect < 0 else
+            "😐 Ни о чём"
+        )
         return
