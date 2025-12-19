@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS cannabis (
 """)
 conn.commit()
 
+# Обновляем все NULL money на 1000 (на всякий случай)
+cursor.execute("UPDATE cannabis SET money = 1000 WHERE money IS NULL")
+conn.commit()
+
 # ================== HELPERS ==================
 def ensure(user):
     cursor.execute(
@@ -43,8 +47,9 @@ def get_user(user):
     return cursor.fetchone()
 
 def add(user_id, field, value):
+    # COALESCE защищает от NULL
     cursor.execute(
-        f"UPDATE cannabis SET {field} = {field} + ? WHERE user_id=?",
+        f"UPDATE cannabis SET {field} = COALESCE({field},0) + ? WHERE user_id=?",
         (value, str(user_id))
     )
     conn.commit()
@@ -95,20 +100,15 @@ def handle(bot, message):
         parts = text.split()
         if len(parts) != 2 or not parts[1].isdigit():
             return bot.reply_to(message, "❌ Пример: купить 5")
-
         n = int(parts[1])
         cost = n * 10
-
         if money < cost:
             return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
-
-        # Всегда списываем деньги
         add(user.id, "money", -cost)
-
-        # Облава: 10% шанс потерять часть кустов
+        # Облава 10%
         if random.random() < 0.1:
             lost = random.randint(1, n)
-            got = n - lost
+            got = max(n - lost, 0)
             if got > 0:
                 add(user.id, "bushes", got)
             return bot.reply_to(message, f"😱 Подставной покупатель! Ты потерял {lost} куст(ов), успел забрать {got}")
@@ -120,12 +120,10 @@ def handle(bot, message):
     if text == "собрать":
         if bushes <= 0:
             return bot.reply_to(message, "❌ Нет кустов")
-
         if not cooldown(u[9], 1):
             remaining = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[9]))
             mins = int(remaining.total_seconds() // 60)
             return bot.reply_to(message, f"⏳ Можно раз в час. Осталось {mins} мин")
-
         gain = random.randint(1, bushes)
         add(user.id, "weed", gain)
         set_time(user.id, "last_collect")
@@ -146,7 +144,6 @@ def handle(bot, message):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
             return bot.reply_to(message, "❌ Пример: продать кексы 5")
-
         n = int(parts[2])
         if cakes < n:
             return bot.reply_to(message, f"❌ Ты не можешь продать {n} кексов, их нет")
@@ -160,7 +157,6 @@ def handle(bot, message):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
             return bot.reply_to(message, "❌ Пример: продать косяки 3")
-
         n = int(parts[2])
         if joints < n:
             return bot.reply_to(message, f"❌ Ты не можешь продать {n} косяков, их нет")
@@ -171,7 +167,10 @@ def handle(bot, message):
 
     # -------- ИСПЕЧЬ --------
     if text.startswith("испечь"):
-        n = int(text.split()[1])
+        parts = text.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Пример: испечь 3")
+        n = int(parts[1])
         if weed < n:
             return bot.reply_to(message, "❌ Нет конопли")
         baked = sum(1 for _ in range(n) if random.random() > 0.4)
@@ -181,7 +180,10 @@ def handle(bot, message):
 
     # -------- КРАФТ --------
     if text.startswith("крафт"):
-        n = int(text.split()[1])
+        parts = text.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Пример: крафт 3")
+        n = int(parts[1])
         if weed < n:
             return bot.reply_to(message, "❌ Нет конопли")
         made = sum(1 for _ in range(n) if random.random() > 0.2)
