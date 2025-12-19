@@ -96,22 +96,29 @@ def handle(bot, message):
         )
 
     # -------- КУПИТЬ КУСТЫ --------
-    if text.startswith("купить"):
-        parts = text.split()
-        if len(parts) != 2 or not parts[1].isdigit():
-            return bot.reply_to(message, "❌ Пример: купить 5")
+if text.startswith("купить"):
+    parts = text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return bot.reply_to(message, "❌ Пример: купить 5")
 
-        n = int(parts[1])
-        cost = n * 10
+    n = int(parts[1])
+    cost = n * 10
 
-        if money < cost:
-            return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
+    # Обновляем пользователя перед операцией
+    u = get_user(user)
+    money, bushes = u[2], u[3]
 
-        # Покупка всегда работает, шанс облавы отключён
-        add(user.id, "money", -cost)
-        add(user.id, "bushes", n)
-        return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} {money_word(cost)}")
+    if money < cost:
+        return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
 
+    # Простейшее добавление
+    cursor.execute(
+        "UPDATE cannabis SET money = money - ?, bushes = bushes + ? WHERE user_id=?",
+        (cost, n, str(user.id))
+    )
+    conn.commit()
+
+    return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} {money_word(cost)}")
     # -------- СОБРАТЬ --------
     if text == "собрать":
         if bushes <= 0:
