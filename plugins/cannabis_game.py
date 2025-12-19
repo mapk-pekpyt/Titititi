@@ -1,153 +1,207 @@
-import sqlite3, random
+import sqlite3
+import random
 from datetime import datetime, timedelta
 from plugins.common import get_name
 
 DB = "data/data.db"
 conn = sqlite3.connect(DB, check_same_thread=False)
-conn.row_factory = sqlite3.Row
+cursor = conn.cursor()
 
 # ================== TABLE ==================
-with conn:
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS cannabis (
-        user_id TEXT PRIMARY KEY,
-        name TEXT,
-        money INTEGER DEFAULT 1000,
-        bushes INTEGER DEFAULT 0,
-        weed INTEGER DEFAULT 0,
-        cakes INTEGER DEFAULT 0,
-        joints INTEGER DEFAULT 0,
-        last_collect TEXT,
-        last_smoke TEXT
-    )
-    """)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS cannabis (
+    user_id TEXT PRIMARY KEY,
+    name TEXT,
+    money INTEGER DEFAULT 1000,
+    bushes INTEGER DEFAULT 0,
+    weed INTEGER DEFAULT 0,
+    cakes INTEGER DEFAULT 0,
+    joints INTEGER DEFAULT 0,
+    hunger INTEGER DEFAULT 0,
+    high INTEGER DEFAULT 0,
+    last_collect TEXT,
+    last_smoke TEXT
+)
+""")
+conn.commit()
 
 # ================== HELPERS ==================
-def get_user(user):
-    uid = str(user.id)
-    name = get_name(user)
-    with conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO cannabis(user_id,name) VALUES (?,?)",
-            (uid, name)
-        )
-        conn.execute(
-            "UPDATE cannabis SET name=? WHERE user_id=?",
-            (name, uid)
-        )
-    return conn.execute(
-        "SELECT * FROM cannabis WHERE user_id=?",
-        (uid,)
-    ).fetchone()
+def ensure(user):
+    cursor.execute(
+        "INSERT OR IGNORE INTO cannabis(user_id,name) VALUES (?,?)",
+        (str(user.id), get_name(user))
+    )
+    cursor.execute(
+        "UPDATE cannabis SET name=? WHERE user_id=?",
+        (get_name(user), str(user.id))
+    )
+    conn.commit()
 
-def hours_passed(last, h=1):
-    if not last:
+def get(user):
+    ensure(user)
+    cursor.execute("SELECT * FROM cannabis WHERE user_id=?", (str(user.id),))
+    return cursor.fetchone()
+
+def add(user_id, field, value):
+    cursor.execute(
+        f"UPDATE cannabis SET {field}=MAX({field}+?,0) WHERE user_id=?",
+        (value, str(user_id))
+    )
+    conn.commit()
+
+def set_time(user_id, field):
+    cursor.execute(
+        f"UPDATE cannabis SET {field}=? WHERE user_id=?",
+        (datetime.now().isoformat(), str(user_id))
+    )
+    conn.commit()
+
+def cooldown(last_time, hours=1):
+    if not last_time:
         return True
-    return datetime.now() - datetime.fromisoformat(last) >= timedelta(hours=h)
+    return datetime.now() - datetime.fromisoformat(last_time) >= timedelta(hours=hours)
+
+def money_word(n):
+    if n % 10 == 1 and n % 100 != 11:
+        return "еврейчик"
+    if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+        return "еврейчика"
+    return "еврейчиков"
 
 # ================== GAME ==================
 def handle(bot, message):
-    try:
-        user = message.from_user
-        text = (message.text or "").lower().strip()
-        cmd = text.split()[0]
-        args = text.split()[1:]
-        u = get_user(user)
+    if not message.text:
+        return
 
-        # ===== БАЛАНС =====
-        if cmd == "баланс":
-            bot.reply_to(message,
-                f"🌿 {u['name']}\n\n"
-                f"💶 Еврейчики: {u['money']}\n"
-                f"🌱 Кусты: {u['bushes']}\n"
-                f"🌿 Конопля: {u['weed']}\n"
-                f"🥮 Кексы: {u['cakes']}\n"
-                f"🚬 Косяки: {u['joints']}"
-            )
-            return
+    user = message.from_user
+    text = message.text.lower().strip()
+    u = get(user)
 
-        # ===== КУПИТЬ =====
-        if cmd == "купить":
-            n = int(args[0]) if args else 1
-            cost = n * 10
-            if n <= 0 or u["money"] < cost:
-                bot.reply_to(message, "❌ Не хватает еврейчиков")
-                return
-            with conn:
-                conn.execute(
-                    "UPDATE cannabis SET money=money-?, bushes=bushes+? WHERE user_id=?",
-                    (cost, n, u["user_id"])
-                )
-            bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} 💶")
-            return
+    money, bushes, weed, cakes, joints = u[2], u[3], u[4], u[5], u[6]
 
-        # ===== СОБРАТЬ =====
-        if cmd == "собрать":
-            if not hours_passed(u["last_collect"]):
-                bot.reply_to(message, "⏳ Рано, подожди час")
-                return
-            if u["bushes"] <= 0:
-                bot.reply_to(message, "❌ Нет кустов")
-                return
-            gain = random.randint(1, u["bushes"])
-            with conn:
-                conn.execute(
-                    "UPDATE cannabis SET weed=weed+?, last_collect=? WHERE user_id=?",
-                    (gain, datetime.now().isoformat(), u["user_id"])
-                )
-            bot.reply_to(message, f"🌿 Собрано {gain} конопли")
-            return
+    # -------- БАЛАНС --------
+    if text == "баланс":
+        return bot.reply_to(
+            message,
+            f"🌿 {u[1]}\n\n"
+            f"💶 {money} {money_word(money)}\n"
+            f"🌱 Кусты: {bushes}\n"
+            f"🌿 Конопля: {weed}\n"
+            f"🥮 Кексы: {cakes}\n"
+            f"🚬 Косяки: {joints}\n"
+            f"❤️ Сытость: {u[7]}\n"
+            f"😵‍💫 Кайф: {u[8]}"
+        )
 
-        # ===== ПРОДАТЬ =====
-        if cmd == "продать":
-            n = int(args[0])
-            if n <= 0 or u["weed"] < n:
-                bot.reply_to(message, "❌ Нечего продавать")
-                return
-            money = n * 1
-            with conn:
-                conn.execute(
-                    "UPDATE cannabis SET weed=weed-?, money=money+? WHERE user_id=?",
-                    (n, money, u["user_id"])
-                )
-            bot.reply_to(message, f"💶 Продано {n} → +{money} еврейчиков")
-            return
+    # -------- КУПИТЬ КУСТЫ --------
+    if text.startswith("купить "):
+        try:
+            n = int(text.split()[1])
+        except:
+            return bot.reply_to(message, "❌ Пример: купить 5")
 
-        # ===== КРАФТ =====
-        if cmd == "крафт":
-            n = int(args[0])
-            if n <= 0 or u["weed"] < n:
-                bot.reply_to(message, "❌ Нет конопли")
-                return
-            success = sum(1 for _ in range(n) if random.random() > 0.4)
-            with conn:
-                conn.execute(
-                    "UPDATE cannabis SET weed=weed-?, joints=joints+? WHERE user_id=?",
-                    (n, success, u["user_id"])
-                )
-            bot.reply_to(message, f"🚬 Скрутил {success}, остальное рассыпалось")
-            return
+        cost = n * 10
+        if money < cost:
+            return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
 
-        # ===== ДУНУТЬ =====
-        if cmd == "дунуть":
-            if u["joints"] <= 0:
-                bot.reply_to(message, "❌ Нет косяков")
-                return
-            if not hours_passed(u["last_smoke"]):
-                bot.reply_to(message, "⏳ Передышка нужна")
-                return
-            text = random.choice([
-                "😵‍💫 улетел красиво",
-                "🤢 подавился дымом",
-                "😐 ни о чём"
-            ])
-            with conn:
-                conn.execute(
-                    "UPDATE cannabis SET joints=joints-1, last_smoke=? WHERE user_id=?",
-                    (datetime.now().isoformat(), u["user_id"])
-                )
-            bot.reply_to(message, text)
-            return
+        add(user.id, "money", -cost)
+        add(user.id, "bushes", n)
+        return bot.reply_to(message, f"🌱 Куплено {n} кустов")
 
-    except Exception as e:
-        print("CANNABIS ERROR:", e)
+    # -------- СОБРАТЬ --------
+    if text == "собрать":
+        if not cooldown(u[9], 1):
+            return bot.reply_to(message, "⏳ Сбор раз в час")
+
+        if bushes <= 0:
+            return bot.reply_to(message, "❌ Нет кустов")
+
+        gain = random.randint(1, bushes)
+        add(user.id, "weed", gain)
+        set_time(user.id, "last_collect")
+        return bot.reply_to(message, f"🌿 Собрано {gain} конопли")
+
+    # -------- ПРОДАТЬ КОНОПЛЮ --------
+    if text.startswith("продать ") and text.split()[1].isdigit():
+        n = int(text.split()[1])
+        if weed < n:
+            return bot.reply_to(message, "❌ Нет конопли")
+
+        earn = n * 1
+        add(user.id, "weed", -n)
+        add(user.id, "money", earn)
+        return bot.reply_to(message, f"💶 +{earn} {money_word(earn)}")
+
+    # -------- ПРОДАТЬ КЕКСЫ --------
+    if text.startswith("продать кексы "):
+        n = int(text.split()[2])
+        if cakes < n:
+            return bot.reply_to(message, "❌ Нет кексов")
+
+        earn = n * 5
+        add(user.id, "cakes", -n)
+        add(user.id, "money", earn)
+        return bot.reply_to(message, f"💶 +{earn} {money_word(earn)}")
+
+    # -------- ПРОДАТЬ КОСЯКИ --------
+    if text.startswith("продать косяки "):
+        n = int(text.split()[2])
+        if joints < n:
+            return bot.reply_to(message, "❌ Нет косяков")
+
+        earn = n * 3
+        add(user.id, "joints", -n)
+        add(user.id, "money", earn)
+        return bot.reply_to(message, f"💶 +{earn} {money_word(earn)}")
+
+    # -------- ИСПЕЧЬ --------
+    if text.startswith("испечь "):
+        n = int(text.split()[1])
+        if weed < n:
+            return bot.reply_to(message, "❌ Нет конопли")
+
+        baked = 0
+        for _ in range(n):
+            if random.random() > 0.4:
+                baked += 1
+
+        add(user.id, "weed", -n)
+        add(user.id, "cakes", baked)
+        return bot.reply_to(message, f"🥮 Испёк {baked}, остальное сгорело 🔥")
+
+    # -------- КРАФТ --------
+    if text.startswith("крафт "):
+        n = int(text.split()[1])
+        if weed < n:
+            return bot.reply_to(message, "❌ Нет конопли")
+
+        success = 0
+        for _ in range(n):
+            if random.random() > 0.2:
+                success += 1
+
+        add(user.id, "weed", -n)
+        add(user.id, "joints", success)
+        return bot.reply_to(message, f"🚬 Скрутил {success}, остальное развалилось")
+
+    # -------- ДУНУТЬ --------
+    if text == "дунуть":
+        if joints <= 0:
+            return bot.reply_to(message, "❌ Нет косяков")
+
+        if not cooldown(u[10], 1):
+            return bot.reply_to(message, "⏳ Дунуть можно раз в час")
+
+        add(user.id, "joints", -1)
+
+        if random.random() < 0.7:
+            effect = random.randint(1, 5)
+            add(user.id, "high", effect)
+            msg = f"😵‍💫 Кайф +{effect}"
+        else:
+            effect = random.randint(1, 3)
+            add(user.id, "high", -effect)
+            msg = f"🤢 Подавился дымом −{effect}"
+
+        set_time(user.id, "last_smoke")
+        return bot.reply_to(message, msg)
