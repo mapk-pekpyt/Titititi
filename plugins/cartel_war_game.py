@@ -90,7 +90,73 @@ def handle(bot, message):
     uid = str(user.id)
     u = get_user(user)  # функция из канабиз
 
-    # Здесь будет блок команд наёмников
+# ================== НАЕМНИКИ ==================
+# Типы наемников
+MERC_TYPES = {
+    "гопник": {"hp": 100, "attack": 20, "cost": 500},
+    "бандит": {"hp": 150, "attack": 40, "cost": 750},
+    "солдат": {"hp": 350, "attack": 70, "cost": 1000},
+}
+
+# Роли
+ROLES = ["защита", "рейд", "задания"]
+
+def hire_merc(bot, message, uid, u, text):
+    parts = text.split()
+    if len(parts) != 4:
+        return bot.reply_to(message, "❌ Пример: нанять защита гопник 5")
+
+    role, merc_type, count = parts[1], parts[2], parts[3]
+    if role not in ROLES:
+        return bot.reply_to(message, f"❌ Неверная роль. Выбери: {', '.join(ROLES)}")
+
+    if merc_type not in MERC_TYPES:
+        return bot.reply_to(message, f"❌ Неверный тип наемника. Доступные: {', '.join(MERC_TYPES.keys())}")
+
+    if not count.isdigit():
+        return bot.reply_to(message, "❌ Количество должно быть числом")
+
+    count = int(count)
+    cost = MERC_TYPES[merc_type]["cost"] * count
+
+    if u["money"] < cost:
+        return bot.reply_to(message, f"❌ Не хватает {cost - u['money']} {money_word(cost - u['money'])}")
+
+    # Списание денег
+    from plugins.cannabis_game import add
+    add(uid, "money", -cost)
+
+    # Добавляем всех наемников
+    cursor.execute(
+        "INSERT INTO cartel_members (user_id, merc_type, role, count) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(user_id, merc_type, role) DO UPDATE SET count=count+?",
+        (uid, merc_type, role, count, count)
+    )
+    conn.commit()
+
+    return bot.reply_to(message, f"💀 Нанято {count} {merc_type} для {role} за {cost} {money_word(cost)}")
+
+
+def show_mercs(bot, message, uid):
+    cursor.execute("SELECT * FROM cartel_members WHERE user_id=?", (uid,))
+    rows = cursor.fetchall()
+    if not rows:
+        return bot.reply_to(message, "🤷‍♂️ У тебя пока нет наемников")
+
+    msg = "💣 Отряды наемников 💣\n"
+    for row in rows:
+        msg += f"• {row['merc_type'].capitalize()} | Роль: {row['role']} | Кол-во: {row['count']}\n"
+
+    return bot.reply_to(message, msg)
+
+
+# ================== ОБРАБОТКА КОМАНД НАЕМНИКОВ ==================
+def handle_mercs(bot, message, uid, u, text):
+    if text.startswith("нанять"):
+        return hire_merc(bot, message, uid, u, text)
+
+    if text == "отряд":
+        return show_mercs(bot, message, uid)
     # Здесь будет блок команд картеля
     # Здесь будет блок миссий
     # Здесь будет блок рейдов
