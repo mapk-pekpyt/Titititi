@@ -25,14 +25,6 @@ CREATE TABLE IF NOT EXISTS cannabis (
 """)
 conn.commit()
 
-# ================== FIX MONEY ==================
-# Если колонки money нет (для старых баз)
-try:
-    cursor.execute("ALTER TABLE cannabis ADD COLUMN money INTEGER DEFAULT 1000")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass  # колонка уже есть
-
 # ================== HELPERS ==================
 def ensure(user):
     cursor.execute(
@@ -86,6 +78,8 @@ def handle(bot, message):
 
     # -------- БАЛАНС --------
     if text == "баланс":
+        u = get_user(user)
+        money, bushes, weed, cakes, joints = u[2], u[3], u[4], u[5], u[6]
         return bot.reply_to(
             message,
             f"🌿 {u[1]}\n\n"
@@ -103,16 +97,12 @@ def handle(bot, message):
         parts = text.split()
         if len(parts) != 2 or not parts[1].isdigit():
             return bot.reply_to(message, "❌ Пример: купить 5")
-
         n = int(parts[1])
         cost = n * 10
-
         if money < cost:
             return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
-
         # Всегда списываем деньги
         add(user.id, "money", -cost)
-
         # Облава: 10% шанс потерять часть кустов
         if random.random() < 0.1:
             lost = random.randint(1, n)
@@ -128,12 +118,10 @@ def handle(bot, message):
     if text == "собрать":
         if bushes <= 0:
             return bot.reply_to(message, "❌ Нет кустов")
-
         if not cooldown(u[9], 1):
             remaining = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[9]))
             mins = int(remaining.total_seconds() // 60)
             return bot.reply_to(message, f"⏳ Можно раз в час. Осталось {mins} мин")
-
         gain = random.randint(1, bushes)
         add(user.id, "weed", gain)
         set_time(user.id, "last_collect")
@@ -154,7 +142,6 @@ def handle(bot, message):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
             return bot.reply_to(message, "❌ Пример: продать кексы 5")
-
         n = int(parts[2])
         if cakes < n:
             return bot.reply_to(message, f"❌ Ты не можешь продать {n} кексов, их нет")
@@ -168,7 +155,6 @@ def handle(bot, message):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
             return bot.reply_to(message, "❌ Пример: продать косяки 3")
-
         n = int(parts[2])
         if joints < n:
             return bot.reply_to(message, f"❌ Ты не можешь продать {n} косяков, их нет")
