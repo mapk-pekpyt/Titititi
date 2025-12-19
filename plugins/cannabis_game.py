@@ -56,6 +56,14 @@ def can_use_timer(last_time_str, hours=1):
     last_time = datetime.fromisoformat(last_time_str)
     return datetime.now() - last_time >= timedelta(hours=hours)
 
+def franklin_word(amount):
+    if amount % 10 == 1 and amount % 100 != 11:
+        return "еврейчик"
+    elif 2 <= amount % 10 <= 4 and not (12 <= amount % 100 <= 14):
+        return "еврейчика"
+    else:
+        return "еврейчиков"
+
 # ================== PLUGIN ==================
 def handle(bot, message):
     user = message.from_user
@@ -67,7 +75,7 @@ def handle(bot, message):
         return bot.reply_to(
             message,
             f"🌿 {get_name(user)}\n\n"
-            f"💵 Зелёные: {u[2]}\n"
+            f"💵 {u[2]} {franklin_word(u[2])}\n"
             f"🌱 Кусты: {u[3]}\n"
             f"🌿 Конопля: {u[4]}\n"
             f"🥮 Кексы: {u[5]}\n"
@@ -81,21 +89,25 @@ def handle(bot, message):
         n = int(text.split()[1]) if len(text.split()) > 1 else 1
         cost = n * 10
         if u[2] < cost:
-            return bot.reply_to(message, "❌ Не хватает 💵")
+            return bot.reply_to(message, f"❌ Не хватает {cost} {franklin_word(cost)}")
         update_user(user.id, "money", -cost)
         update_user(user.id, "bushes", n)
-        return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} 💵")
+        return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} {franklin_word(cost)}")
 
     # -------- СОБРАТЬ --------
     if text == "собрать":
         if u[3] <= 0:
             return bot.reply_to(message, "❌ У тебя нет кустов")
+        last = u[9]
+        if not can_use_timer(last, 1):
+            mins = int((timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(last))).seconds / 60)
+            return bot.reply_to(message, f"⏳ Подожди {mins} мин")
         gain = random.randint(1, u[3])
         update_user(user.id, "weed", gain)
         set_time(user.id, "last_collect")
         return bot.reply_to(message, f"🌿 Собрано {gain} конопли")
 
-    # -------- ПРОДАТЬ --------
+    # -------- ПРОДАТЬ КОНOПЛЮ --------
     if text.startswith("продать ") and not text.startswith("продать кексы") and not text.startswith("продать косяки"):
         n = int(text.split()[1])
         if u[4] < n:
@@ -103,7 +115,7 @@ def handle(bot, message):
         earned = n * 1
         update_user(user.id, "weed", -n)
         update_user(user.id, "money", earned)
-        return bot.reply_to(message, f"💰 Продано {n} конопли → +{earned} 💵")
+        return bot.reply_to(message, f"💰 Продано {n} конопли → +{earned} {franklin_word(earned)}")
 
     # -------- ПРОДАТЬ КЕКСЫ --------
     if text.startswith("продать кексы"):
@@ -113,7 +125,7 @@ def handle(bot, message):
         earned = n * 5
         update_user(user.id, "cakes", -n)
         update_user(user.id, "money", earned)
-        return bot.reply_to(message, f"💰 Продано {n} кексов → +{earned} 💵")
+        return bot.reply_to(message, f"💰 Продано {n} кексов → +{earned} {franklin_word(earned)}")
 
     # -------- ПРОДАТЬ КОСЯКИ --------
     if text.startswith("продать косяки"):
@@ -123,7 +135,7 @@ def handle(bot, message):
         earned = n * 3
         update_user(user.id, "joints", -n)
         update_user(user.id, "money", earned)
-        return bot.reply_to(message, f"💰 Продано {n} косяков → +{earned} 💵")
+        return bot.reply_to(message, f"💰 Продано {n} косяков → +{earned} {franklin_word(earned)}")
 
     # -------- ИСПЕЧЬ КЕКСЫ --------
     if text.startswith("испечь"):
@@ -133,7 +145,7 @@ def handle(bot, message):
         baked = 0
         burned = 0
         for _ in range(n):
-            if random.random() < 0.4:  # 40% шанс сгореть
+            if random.random() < 0.4:
                 burned += 1
             else:
                 baked += 1
@@ -149,7 +161,7 @@ def handle(bot, message):
         joints = 0
         broken = 0
         for _ in range(n):
-            if random.random() < 0.2:  # 20% шанс сломаться
+            if random.random() < 0.2:
                 broken += 1
             else:
                 joints += 1
@@ -167,14 +179,14 @@ def handle(bot, message):
         set_time(user.id, "last_eat")
         return bot.reply_to(message, f"❤️ Сытость +{n}")
 
-    # -------- ДУНУТЬ (раз в час) --------
+    # -------- ДУНУТЬ --------
     if text == "дунуть":
         if u[6] <= 0:
             return bot.reply_to(message, "❌ Нет косяков")
         if not can_use_timer(u[11], 1):
             mins = int((timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[11]))).seconds / 60)
             return bot.reply_to(message, f"⏳ Подожди {mins} мин")
-        success = random.random() < 0.7  # 70% шанс кайфа
+        success = random.random() < 0.7
         if success:
             effect = random.randint(1, 5)
             update_user(user.id, "joints", -1)
