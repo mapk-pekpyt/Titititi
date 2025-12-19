@@ -3,7 +3,7 @@ import random
 from datetime import datetime, timedelta
 from plugins.common import get_name
 
-DB = "data/cannabis_game.db"
+DB = "data/data.db"
 conn = sqlite3.connect(DB, check_same_thread=False)
 cursor = conn.cursor()
 
@@ -28,7 +28,7 @@ conn.commit()
 # ================== HELPERS ==================
 def ensure(user):
     cursor.execute(
-        "INSERT OR IGNORE INTO cannabis (user_id, name) VALUES (?,?)",
+        "INSERT OR IGNORE INTO cannabis(user_id,name) VALUES (?,?)",
         (str(user.id), get_name(user))
     )
     cursor.execute(
@@ -37,14 +37,14 @@ def ensure(user):
     )
     conn.commit()
 
-def get_user(user):
+def get(user):
     ensure(user)
     cursor.execute("SELECT * FROM cannabis WHERE user_id=?", (str(user.id),))
     return cursor.fetchone()
 
 def add(user_id, field, value):
     cursor.execute(
-        f"UPDATE cannabis SET {field} = {field} + ? WHERE user_id=?",
+        f"UPDATE cannabis SET {field}=MAX({field}+?,0) WHERE user_id=?",
         (value, str(user_id))
     )
     conn.commit()
@@ -64,15 +64,18 @@ def cooldown(last_time, hours=1):
 def money_word(n):
     if n % 10 == 1 and n % 100 != 11:
         return "еврейчик"
-    elif 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+    if 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
         return "еврейчика"
     return "еврейчиков"
 
-# ================== MAIN ==================
+# ================== GAME ==================
 def handle(bot, message):
+    if not message.text:
+        return
+
     user = message.from_user
-    text = (message.text or "").lower().strip()
-    u = get_user(user)
+    text = message.text.lower().strip()
+    u = get(user)
 
     money, bushes, weed, cakes, joints = u[2], u[3], u[4], u[5], u[6]
 
@@ -91,28 +94,27 @@ def handle(bot, message):
         )
 
     # -------- КУПИТЬ КУСТЫ --------
-    if text.startswith("купить"):
-        parts = text.split()
-        if len(parts) != 2 or not parts[1].isdigit():
+    if text.startswith("купить "):
+        try:
+            n = int(text.split()[1])
+        except:
             return bot.reply_to(message, "❌ Пример: купить 5")
 
-        n = int(parts[1])
         cost = n * 10
-
         if money < cost:
             return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
 
         add(user.id, "money", -cost)
         add(user.id, "bushes", n)
-        return bot.reply_to(message, f"🌱 Куплено {n} кустов за {cost} {money_word(cost)}")
+        return bot.reply_to(message, f"🌱 Куплено {n} кустов")
 
     # -------- СОБРАТЬ --------
     if text == "собрать":
+        if not cooldown(u[9], 1):
+            return bot.reply_to(message, "⏳ Сбор раз в час")
+
         if bushes <= 0:
             return bot.reply_to(message, "❌ Нет кустов")
-
-        if not cooldown(u[9], 1):
-            return bot.reply_to(message, "⏳ Можно раз в час")
 
         gain = random.randint(1, bushes)
         add(user.id, "weed", gain)
@@ -128,59 +130,59 @@ def handle(bot, message):
         earn = n * 1
         add(user.id, "weed", -n)
         add(user.id, "money", earn)
-        return bot.reply_to(message, f"💶 Продано {n} → +{earn} {money_word(earn)}")
+        return bot.reply_to(message, f"💶 +{earn} {money_word(earn)}")
 
     # -------- ПРОДАТЬ КЕКСЫ --------
-    if text.startswith("продать кексы"):
-        parts = text.split()
-        if len(parts) != 3 or not parts[2].isdigit():
-            return bot.reply_to(message, "❌ Пример: продать кексы 5")
-
-        n = int(parts[2])
+    if text.startswith("продать кексы "):
+        n = int(text.split()[2])
         if cakes < n:
             return bot.reply_to(message, "❌ Нет кексов")
 
         earn = n * 5
         add(user.id, "cakes", -n)
         add(user.id, "money", earn)
-        return bot.reply_to(message, f"💶 Продано {n} кексов → +{earn} {money_word(earn)}")
+        return bot.reply_to(message, f"💶 +{earn} {money_word(earn)}")
 
     # -------- ПРОДАТЬ КОСЯКИ --------
-    if text.startswith("продать косяки"):
-        parts = text.split()
-        if len(parts) != 3 or not parts[2].isdigit():
-            return bot.reply_to(message, "❌ Пример: продать косяки 3")
-
-        n = int(parts[2])
+    if text.startswith("продать косяки "):
+        n = int(text.split()[2])
         if joints < n:
             return bot.reply_to(message, "❌ Нет косяков")
 
         earn = n * 3
         add(user.id, "joints", -n)
         add(user.id, "money", earn)
-        return bot.reply_to(message, f"💶 Продано {n} косяков → +{earn} {money_word(earn)}")
+        return bot.reply_to(message, f"💶 +{earn} {money_word(earn)}")
 
     # -------- ИСПЕЧЬ --------
-    if text.startswith("испечь"):
+    if text.startswith("испечь "):
         n = int(text.split()[1])
         if weed < n:
             return bot.reply_to(message, "❌ Нет конопли")
 
-        baked = sum(1 for _ in range(n) if random.random() > 0.4)
+        baked = 0
+        for _ in range(n):
+            if random.random() > 0.4:
+                baked += 1
+
         add(user.id, "weed", -n)
         add(user.id, "cakes", baked)
-        return bot.reply_to(message, f"🥮 Получилось {baked}, остальное сгорело")
+        return bot.reply_to(message, f"🥮 Испёк {baked}, остальное сгорело 🔥")
 
     # -------- КРАФТ --------
-    if text.startswith("крафт"):
+    if text.startswith("крафт "):
         n = int(text.split()[1])
         if weed < n:
             return bot.reply_to(message, "❌ Нет конопли")
 
-        made = sum(1 for _ in range(n) if random.random() > 0.2)
+        success = 0
+        for _ in range(n):
+            if random.random() > 0.2:
+                success += 1
+
         add(user.id, "weed", -n)
-        add(user.id, "joints", made)
-        return bot.reply_to(message, f"🚬 Скручено {made}, остальное в труху")
+        add(user.id, "joints", success)
+        return bot.reply_to(message, f"🚬 Скрутил {success}, остальное развалилось")
 
     # -------- ДУНУТЬ --------
     if text == "дунуть":
@@ -188,9 +190,10 @@ def handle(bot, message):
             return bot.reply_to(message, "❌ Нет косяков")
 
         if not cooldown(u[10], 1):
-            return bot.reply_to(message, "⏳ Раз в час")
+            return bot.reply_to(message, "⏳ Дунуть можно раз в час")
 
         add(user.id, "joints", -1)
+
         if random.random() < 0.7:
             effect = random.randint(1, 5)
             add(user.id, "high", effect)
