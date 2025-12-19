@@ -42,18 +42,12 @@ def get_user(user):
     cursor.execute("SELECT * FROM cannabis WHERE user_id=?", (str(user.id),))
     return cursor.fetchone()
 
-def add(user_id, field, value):
-    cursor.execute(
-        f"UPDATE cannabis SET {field} = {field} + ? WHERE user_id=?",
-        (value, str(user_id))
-    )
+def update_field(user_id, field, value):
+    cursor.execute(f"UPDATE cannabis SET {field}=? WHERE user_id=?", (value, str(user_id)))
     conn.commit()
 
-def set_time(user_id, field):
-    cursor.execute(
-        f"UPDATE cannabis SET {field}=? WHERE user_id=?",
-        (datetime.now().isoformat(), str(user_id))
-    )
+def add_field(user_id, field, value):
+    cursor.execute(f"UPDATE cannabis SET {field} = {field} + ? WHERE user_id=?", (value, str(user_id)))
     conn.commit()
 
 def cooldown(last_time, hours=1):
@@ -79,12 +73,12 @@ def handle(bot, message):
     # -------- БАЛАНС --------
     if text == "баланс":
         last_collect = u[9]
-        next_collect = ""
+        remaining = ""
         if last_collect:
-            remaining = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(last_collect))
-            mins = int(remaining.total_seconds() // 60)
+            diff = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(last_collect))
+            mins = int(diff.total_seconds() // 60)
             if mins > 0:
-                next_collect = f"\n⏱ Следующий сбор через {mins} мин"
+                remaining = f"\n⏱ Следующий сбор через {mins} мин"
         return bot.reply_to(
             message,
             f"🌿 {u[1]}\n\n"
@@ -94,8 +88,7 @@ def handle(bot, message):
             f"🥮 Кексы: {cakes}\n"
             f"🚬 Косяки: {joints}\n"
             f"❤️ Сытость: {u[7]}\n"
-            f"😵‍💫 Кайф: {u[8]}"
-            f"{next_collect}"
+            f"😵‍💫 Кайф: {u[8]}{remaining}"
         )
 
     # -------- КУПИТЬ КУСТЫ --------
@@ -106,45 +99,42 @@ def handle(bot, message):
 
         n = int(parts[1])
         cost = n * 10
-
         if money < cost:
             return bot.reply_to(message, f"❌ Нужно {cost} {money_word(cost)}")
-
+        
         lost = 0
-        if random.random() < 0.3:  # шанс на “подставного покупателя”
+        if random.random() < 0.3:  # шанс на подставного покупателя
             lost = random.randint(1, n)
             n -= lost
 
-        add(user.id, "money", -cost)
-        add(user.id, "bushes", n)
+        add_field(user.id, "money", -cost)
+        add_field(user.id, "bushes", n)
         msg = f"🌱 Куплено {n} кустов за {cost} {money_word(cost)}"
         if lost > 0:
-            msg += f"\n😱 Подставной покупатель! Ты потерял {lost} куст(ов)"
+            msg += f"\n😱 Подставной покупатель! Потерял {lost} куст(ов)"
         return bot.reply_to(message, msg)
 
     # -------- СОБРАТЬ --------
     if text == "собрать":
         if bushes <= 0:
             return bot.reply_to(message, "❌ Нет кустов")
-
-        if not cooldown(u[9], 1):
-            remaining = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[9]))
-            mins = int(remaining.total_seconds() // 60)
-            return bot.reply_to(message, f"⏳ Можно раз в час, осталось {mins} мин")
-
+        if not cooldown(u[9]):
+            diff = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[9]))
+            mins = int(diff.total_seconds() // 60)
+            return bot.reply_to(message, f"⏳ Раз в час, осталось {mins} мин")
         gain = random.randint(1, bushes)
-        add(user.id, "weed", gain)
-        set_time(user.id, "last_collect")
+        add_field(user.id, "weed", gain)
+        update_field(user.id, "last_collect", datetime.now().isoformat())
         return bot.reply_to(message, f"🌿 Собрано {gain} конопли")
 
     # -------- ПРОДАТЬ КОНОПЛЮ --------
     if text.startswith("продать ") and text.split()[1].isdigit():
         n = int(text.split()[1])
         if weed < n:
-            return bot.reply_to(message, f"❌ Ты не можешь продать {n} конопли — у тебя нет столько")
+            return bot.reply_to(message, f"❌ Не хватает конопли для продажи {n}")
         earn = n * 1
-        add(user.id, "weed", -n)
-        add(user.id, "money", earn)
+        add_field(user.id, "weed", -n)
+        add_field(user.id, "money", earn)
         return bot.reply_to(message, f"💶 Продано {n} конопли → +{earn} {money_word(earn)}")
 
     # -------- ПРОДАТЬ КЕКСЫ --------
@@ -156,8 +146,8 @@ def handle(bot, message):
         if cakes < n:
             return bot.reply_to(message, "❌ Нет кексов")
         earn = n * 5
-        add(user.id, "cakes", -n)
-        add(user.id, "money", earn)
+        add_field(user.id, "cakes", -n)
+        add_field(user.id, "money", earn)
         return bot.reply_to(message, f"💶 Продано {n} кексов → +{earn} {money_word(earn)}")
 
     # -------- ПРОДАТЬ КОСЯКИ --------
@@ -169,8 +159,8 @@ def handle(bot, message):
         if joints < n:
             return bot.reply_to(message, "❌ Нет косяков")
         earn = n * 3
-        add(user.id, "joints", -n)
-        add(user.id, "money", earn)
+        add_field(user.id, "joints", -n)
+        add_field(user.id, "money", earn)
         return bot.reply_to(message, f"💶 Продано {n} косяков → +{earn} {money_word(earn)}")
 
     # -------- ИСПЕЧЬ --------
@@ -182,9 +172,9 @@ def handle(bot, message):
         if weed < n:
             return bot.reply_to(message, "❌ Нет конопли")
         baked = sum(1 for _ in range(n) if random.random() > 0.4)
-        add(user.id, "weed", -n)
-        add(user.id, "cakes", baked)
-        return bot.reply_to(message, f"🥮 Получилось {baked}, остальное сгорело")
+        add_field(user.id, "weed", -n)
+        add_field(user.id, "cakes", baked)
+        return bot.reply_to(message, f"🥮 Испеклось {baked}, остальное сгорело")
 
     # -------- КРАФТ --------
     if text.startswith("крафт"):
@@ -195,27 +185,27 @@ def handle(bot, message):
         if weed < n:
             return bot.reply_to(message, "❌ Нет конопли")
         made = sum(1 for _ in range(n) if random.random() > 0.2)
-        add(user.id, "weed", -n)
-        add(user.id, "joints", made)
+        add_field(user.id, "weed", -n)
+        add_field(user.id, "joints", made)
         return bot.reply_to(message, f"🚬 Скручено {made}, остальное в труху")
 
     # -------- ДУНУТЬ --------
     if text == "дунуть":
         if joints <= 0:
             return bot.reply_to(message, "❌ Нет косяков")
-        if not cooldown(u[10], 1):
-            remaining = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[10]))
-            mins = int(remaining.total_seconds() // 60)
+        if not cooldown(u[10]):
+            diff = timedelta(hours=1) - (datetime.now() - datetime.fromisoformat(u[10]))
+            mins = int(diff.total_seconds() // 60)
             return bot.reply_to(message, f"⏳ Раз в час, осталось {mins} мин")
 
-        add(user.id, "joints", -1)
+        add_field(user.id, "joints", -1)
         if random.random() < 0.7:
             effect = random.randint(1, 5)
-            add(user.id, "high", effect)
+            add_field(user.id, "high", effect)
             msg = f"😵‍💫 Кайф +{effect}"
         else:
             effect = random.randint(1, 3)
-            add(user.id, "high", -effect)
+            add_field(user.id, "high", -effect)
             msg = f"🤢 Подавился дымом −{effect}"
-        set_time(user.id, "last_smoke")
+        update_field(user.id, "last_smoke", datetime.now().isoformat())
         return bot.reply_to(message, msg)
