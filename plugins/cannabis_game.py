@@ -85,7 +85,6 @@ def handle(bot, message):
             f"🌿 Травка: {u['weed']}\n"
             f"🥮 Кексы: {u['cakes']}\n"
             f"🚬 Косяки: {u['joints']}\n"
-            f"❤️ Сытость: {u['hunger']}"
         )
 
     # ---------- КУПИТЬ ----------
@@ -125,7 +124,7 @@ def handle(bot, message):
     # ---------- ФЕРМА ----------
     if text == "ферма":
         if u["bushes"] <= 0:
-            return bot.reply_to(message, "❌ Ферма пустая")
+            return bot.reply_to(message, "а плантации то еще не засажены")
 
         if not cooldown(u["last_collect"], 1):
             mins = int(
@@ -147,7 +146,7 @@ def handle(bot, message):
 
         n = int(parts[1])
         if u["weed"] < n:
-            return bot.reply_to(message, "❌ Нечего продавать")
+            return bot.reply_to(message, "❌нечем барыжить")
 
         add(user.id, "weed", -n)
         add(user.id, "money", n)
@@ -212,7 +211,7 @@ def handle(bot, message):
     # ---------- ДУНУТЬ ----------
     if text == "дунуть":
         if u["joints"] <= 0:
-            return bot.reply_to(message, "❌ Дунуть нечего")
+            return bot.reply_to(message, "❌ Дунуть нехуй, ты на зоже")
 
         if not cooldown(u["last_smoke"], 1):
             mins = int(
