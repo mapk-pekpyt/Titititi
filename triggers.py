@@ -95,9 +95,9 @@ TRIGGERS = {
     "долить пива": "beer",
     
     # ================= CANNABIS GAME =================
-    "баланс": "cannabis_game",
+    "что в мешочке": "cannabis_game",
     "купить": "cannabis_game",
-    "собрать": "cannabis_game",
+    "ферма": "cannabis_game",
     "продать": "cannabis_game",
     "испечь": "cannabis_game",
     "крафт": "cannabis_game",
