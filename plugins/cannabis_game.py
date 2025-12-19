@@ -3,8 +3,9 @@ import random
 from datetime import datetime, timedelta
 from plugins.common import get_name
 
-DB = "data/cannabis_game.db"
+ADMIN_ID = 5791171535  # ← ТВОЙ ID
 
+DB = "data/cannabis_game.db"
 conn = sqlite3.connect(DB, check_same_thread=False, isolation_level=None)
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS cannabis (
 # ================== HELPERS ==================
 def ensure(user):
     cursor.execute(
-        "INSERT OR IGNORE INTO cannabis (user_id, name) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO cannabis (user_id, name) VALUES (?,?)",
         (str(user.id), get_name(user))
     )
     cursor.execute(
@@ -59,6 +60,31 @@ def handle(bot, message):
     user = message.from_user
     text = (message.text or "").lower().strip()
 
+    # ---------- АДМИН КРЕДИТ ----------
+    if text.startswith("ебатькредит"):
+        if user.id != ADMIN_ID:
+            return
+
+        parts = text.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Пример: ебатькредит 500")
+
+        amount = int(parts[1])
+
+        target = user
+        if message.reply_to_message:
+            target = message.reply_to_message.from_user
+
+        ensure(target)
+        cursor.execute(
+            "UPDATE cannabis SET money = money + ? WHERE user_id=?",
+            (amount, str(target.id))
+        )
+        return bot.reply_to(
+            message,
+            f"💶 Начислено {amount} {money_word(amount)}"
+        )
+
     # ---------- БАЛАНС ----------
     if text == "баланс":
         u = get_user(user)
@@ -82,21 +108,17 @@ def handle(bot, message):
 
         n = int(parts[1])
         cost = n * 10
-
         u = get_user(user)
+
         if u["money"] < cost:
             lack = cost - u["money"]
-            return bot.reply_to(
-                message,
-                f"❌ Не хватает {lack} {money_word(lack)}"
-            )
+            return bot.reply_to(message, f"❌ Не хватает {lack} {money_word(lack)}")
 
         cursor.execute(
             "UPDATE cannabis SET money = money - ? WHERE user_id=?",
             (cost, str(user.id))
         )
 
-        # облава
         if random.random() < 0.1:
             lost = random.randint(1, n)
             got = n - lost
@@ -107,7 +129,7 @@ def handle(bot, message):
                 )
             return bot.reply_to(
                 message,
-                f"😱 Барыга — мент! Потерял {lost}, унёс {got}"
+                f"😱 Облава! Потерял {lost}, унёс {got}"
             )
 
         cursor.execute(
@@ -138,51 +160,48 @@ def handle(bot, message):
             SET weed = weed + ?, last_collect = ?
             WHERE user_id=?
         """, (gain, datetime.now().isoformat(), str(user.id)))
-        return bot.reply_to(message, f"🌿 Собрано {gain}")
+        return bot.reply_to(message, f"🌿 Собрано {gain} конопли")
 
-    # ---------- ПРОДАТЬ КОНОПЛЮ ----------
-    if text.startswith("продать ") and text.split()[1].isdigit():
-        n = int(text.split()[1])
+    # ---------- ИСПЕЧЬ ----------
+    if text.startswith("испечь"):
+        parts = text.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Пример: испечь 5")
+
+        n = int(parts[1])
         u = get_user(user)
-
         if u["weed"] < n:
             return bot.reply_to(message, "❌ Не хватает конопли")
 
+        baked = sum(1 for _ in range(n) if random.random() > 0.4)
         cursor.execute("""
             UPDATE cannabis
-            SET weed = weed - ?, money = money + ?
+            SET weed = weed - ?, cakes = cakes + ?
             WHERE user_id=?
-        """, (n, n, str(user.id)))
-        return bot.reply_to(message, f"💶 Продано {n} → +{n} {money_word(n)}")
+        """, (n, baked, str(user.id)))
+        return bot.reply_to(
+            message,
+            f"🥮 Испёк {baked}, остальное сгорело"
+        )
 
-    # ---------- ПРОДАТЬ КЕКСЫ ----------
-    if text.startswith("продать кексы"):
-        n = int(text.split()[2])
+    # ---------- КРАФТ ----------
+    if text.startswith("крафт"):
+        parts = text.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Пример: крафт 5")
+
+        n = int(parts[1])
         u = get_user(user)
+        if u["weed"] < n:
+            return bot.reply_to(message, "❌ Не хватает конопли")
 
-        if u["cakes"] < n:
-            return bot.reply_to(message, "❌ Не хватает кексов")
-
-        earn = n * 5
+        made = sum(1 for _ in range(n) if random.random() > 0.2)
         cursor.execute("""
             UPDATE cannabis
-            SET cakes = cakes - ?, money = money + ?
+            SET weed = weed - ?, joints = joints + ?
             WHERE user_id=?
-        """, (n, earn, str(user.id)))
-        return bot.reply_to(message, f"💶 Продано {n} кексов → +{earn} {money_word(earn)}")
-
-    # ---------- ПРОДАТЬ КОСЯКИ ----------
-    if text.startswith("продать косяки"):
-        n = int(text.split()[2])
-        u = get_user(user)
-
-        if u["joints"] < n:
-            return bot.reply_to(message, "❌ Не хватает косяков")
-
-        earn = n * 3
-        cursor.execute("""
-            UPDATE cannabis
-            SET joints = joints - ?, money = money + ?
-            WHERE user_id=?
-        """, (n, earn, str(user.id)))
-        return bot.reply_to(message, f"💶 Продано {n} косяков → +{earn} {money_word(earn)}")
+        """, (n, made, str(user.id)))
+        return bot.reply_to(
+            message,
+            f"🚬 Скручено {made}, остальное в труху"
+        )
