@@ -152,10 +152,10 @@ def handle(bot, message):
         return bot.reply_to(message, f"💶 Впарил {n} травки → +{n} {money_word(n)}")
 
     # ---------- ПРОДАТЬ КЕКСЫ ----------
-    if text.startswith("продать кексы"):
+    if text.startswith("впарить кексы"):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
-            return bot.reply_to(message, "❌ Пример: продать кексы 5")
+            return bot.reply_to(message, "❌ Пример: впарить кексы 5")
         n = int(parts[2])
         if u["cakes"] < n:
             return bot.reply_to(message, "❌ Не хватает кексов")
@@ -164,10 +164,10 @@ def handle(bot, message):
         return bot.reply_to(message, f"💶 Продано {n} кексов → +{n*5} {money_word(n*5)}")
 
     # ---------- ПРОДАТЬ КОСЯКИ ----------
-    if text.startswith("продать косяки"):
+    if text.startswith("баражить косяками"):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
-            return bot.reply_to(message, "❌ Пример: продать косяки 3")
+            return bot.reply_to(message, "❌ Пример: баражить косяками 3")
         n = int(parts[2])
         if u["joints"] < n:
             return bot.reply_to(message, "❌ Не хватает косяков")
