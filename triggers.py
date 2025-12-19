@@ -124,5 +124,5 @@ TRIGGERS = {
     "кв+": "cannabis_game",
 
     # ================= ТОПЫ =================
-    "топ": "cannabis_game",
+    "ебатькредит": "cannabis_game",
 }
