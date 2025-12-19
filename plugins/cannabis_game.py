@@ -164,10 +164,10 @@ def handle(bot, message):
         return bot.reply_to(message, f"💶 Продано {n} кексов → +{n*5} {money_word(n*5)}")
 
     # ---------- ПРОДАТЬ КОСЯКИ ----------
-    if text.startswith("баражить косяками"):
+    if text.startswith("барыжить косяками"):
         parts = text.split()
         if len(parts) != 3 or not parts[2].isdigit():
-            return bot.reply_to(message, "❌ Пример: баражить косяками 3")
+            return bot.reply_to(message, "❌ Пример: барыжить косяками 3")
         n = int(parts[2])
         if u["joints"] < n:
             return bot.reply_to(message, "❌ Не хватает косяков")
