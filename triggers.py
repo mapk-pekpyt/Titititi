@@ -103,6 +103,8 @@ TRIGGERS = {
     "крафт": "cannabis_game",
     "съесть": "cannabis_game",
     "дунуть": "cannabis_game",
+    "барыжить косяками": "cannabis_game",
+    "впарить кексы": "cannabis_game",
 
     # ================= АРМИЯ =================
     
@@ -110,22 +112,5 @@ TRIGGERS = {
     "отряд": "cartel_war_game",     # показать всех своих наёмников
     "рейд": "cartel_war_game",       # рейд [@игрок]
     "миссии": "cartel_war_game",  # отправка на миссии
-
-    # ================= РЕЙДЫ =================
-    "рейд": "cannabis_game",
-    "напасть": "cannabis_game",
-
-    # ================= КЛАНЫ =================
-    "клан": "cannabis_game",
-    "создать": "cannabis_game",
-    "вступить": "cannabis_game",
-    "назначить": "cannabis_game",
-    "выдать": "cannabis_game",
-
-    # ================= КВ =================
-    "кв+": "cannabis_game",
-
-
-    "барыжить косяками": "cannabis_game",
-    "впарить кексы": "cannabis_game",
+    "аккредитация": "cartel_war_game",
 }
