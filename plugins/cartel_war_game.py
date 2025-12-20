@@ -42,7 +42,7 @@ MERC_TYPES = {
 }
 
 ROLES = ["защита", "рейд", "задания"]
-ADMIN_ID = "ТВОЙ_ID"
+ADMIN_ID = "5791171535"
 
 # =====================================================
 # 🎩 СТИЛЬ СООБЩЕНИЙ
@@ -238,7 +238,7 @@ def missions(bot, message, uid):
 # 🧪 АККРЕДИТАЦИЯ (ТЕСТ)
 # =====================================================
 def accreditation(bot, message, uid, text):
-    if uid != ADMIN_ID: 5791171535
+    if uid != ADMIN_ID:
         return
     parts = text.split()
     if len(parts) == 2 and parts[1].isdigit():
