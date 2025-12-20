@@ -2,43 +2,39 @@ import sqlite3
 import random
 from datetime import datetime, timedelta
 from plugins.common import get_name
-from plugins import cannabis_game
+from plugins.cannabis_game import get_user, add
 
 DB = "data/cartel_game.db"
 conn = sqlite3.connect(DB, check_same_thread=False)
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
-# ================== БАЗЫ ДАННЫХ ==================
+# =====================================================
+# 📦 БАЗЫ ДАННЫХ
+# =====================================================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS cartel_members (
     user_id TEXT,
     merc_type TEXT,
     role TEXT,
     count INTEGER DEFAULT 0,
-    PRIMARY KEY(user_id, merc_type, role)
+    PRIMARY KEY (user_id, merc_type, role)
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS missions (
+    user_id TEXT PRIMARY KEY,
+    merc_type TEXT,
+    count INTEGER,
+    start_time TEXT
 )
 """)
 conn.commit()
 
-# ================== ХЕЛПЕРЫ ==================
-def get_user(user):
-    return cannabis_game.get_user(user)
-
-def add_money(user_id, amount):
-    cannabis_game.add(user_id, "money", amount)
-
-def money_word(n):
-    if n % 10 == 1 and n % 100 != 11:
-        return "еврик"
-    elif 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
-        return "еврика"
-    return "евриков"
-
-def cartel_msg(title, text):
-    return f"💣 {title} 💣\n{text}"
-
-# ================== НАЁМНИКИ ==================
+# =====================================================
+# 🧠 КОНСТАНТЫ
+# =====================================================
 MERC_TYPES = {
     "гопник": {"hp": 100, "attack": 20, "cost": 500},
     "бандит": {"hp": 150, "attack": 40, "cost": 750},
@@ -46,106 +42,243 @@ MERC_TYPES = {
 }
 
 ROLES = ["защита", "рейд", "задания"]
+ADMIN_ID = "ТВОЙ_ID"
 
-def hire_merc(bot, message, uid, u, text):
+# =====================================================
+# 🎩 СТИЛЬ СООБЩЕНИЙ
+# =====================================================
+def cartel_msg(user, text):
+    return f"🕴 {get_name(user)}\n{text}"
+
+# =====================================================
+# 👥 НАЙМ
+# команда: нанять <роль> <тип> <кол-во>
+# =====================================================
+def hire(bot, message, uid, u, text):
     parts = text.split()
     if len(parts) != 4:
-        return bot.reply_to(message, "❌ Пример: нанять защита гопник 5")
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Говори чётко.\nнанять защита гопник 5"
+        ))
 
-    role, merc_type, count = parts[1], parts[2], parts[3]
+    role, merc, count = parts[1], parts[2], parts[3]
 
     if role not in ROLES:
-        return bot.reply_to(message, f"❌ Роль неверна. Выбери: {', '.join(ROLES)}")
-    if merc_type not in MERC_TYPES:
-        return bot.reply_to(message, f"❌ Тип неверен. Доступные: {', '.join(MERC_TYPES.keys())}")
-    if not count.isdigit():
-        return bot.reply_to(message, "❌ Количество должно быть числом")
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            f"Роль должна быть: {', '.join(ROLES)}"
+        ))
+
+    if merc not in MERC_TYPES:
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            f"Таких людей у меня нет."
+        ))
+
+    if not count.isdigit() or int(count) <= 0:
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Количество должно быть числом."
+        ))
 
     count = int(count)
-    cost = MERC_TYPES[merc_type]["cost"] * count
+    cost = MERC_TYPES[merc]["cost"] * count
+
     if u["money"] < cost:
-        return bot.reply_to(message, f"❌ Не хватает {cost - u['money']} {money_word(cost - u['money'])}")
+        need = cost - u["money"]
+        can = u["money"] // MERC_TYPES[merc]["cost"]
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            f"Ты пришёл ко мне без денег.\n"
+            f"Не хватает {need} 💶.\n"
+            f"Максимум — {can}."
+        ))
 
-    # Списываем деньги
-    add_money(uid, -cost)
+    add(uid, "money", -cost)
 
-    # Добавляем или обновляем наёмников корректно
-    cursor.execute("SELECT count FROM cartel_members WHERE user_id=? AND merc_type=? AND role=?",
-                   (uid, merc_type, role))
-    row = cursor.fetchone()
-    if row:
-        cursor.execute("UPDATE cartel_members SET count=count+? WHERE user_id=? AND merc_type=? AND role=?",
-                       (count, uid, merc_type, role))
-    else:
-        cursor.execute("INSERT INTO cartel_members (user_id, merc_type, role, count) VALUES (?, ?, ?, ?)",
-                       (uid, merc_type, role, count))
+    cursor.execute("""
+        INSERT INTO cartel_members (user_id, merc_type, role, count)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, merc_type, role)
+        DO UPDATE SET count = count + ?
+    """, (uid, merc, role, count, count))
     conn.commit()
 
-    return bot.reply_to(message, cartel_msg("Крестный отец говорит:",
-                                            f"Ты нанял {count} {merc_type} для {role}. Заплати {cost} {money_word(cost)}"))
+    return bot.reply_to(message, cartel_msg(
+        message.from_user,
+        f"Ты нанял {count} {merc}.\n"
+        f"Они служат в роли «{role}».\n"
+        f"Осталось {u['money'] - cost} 💶."
+    ))
 
-def show_mercs(bot, message, uid):
+# =====================================================
+# 👥 ОТРЯДЫ
+# команда: отряд
+# =====================================================
+def squads(bot, message, uid):
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=?", (uid,))
     rows = cursor.fetchall()
+
     if not rows:
-        return bot.reply_to(message, cartel_msg("Крестный отец", "У тебя пока нет наёмников"))
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "У тебя пока нет людей."
+        ))
 
-    msg = "💣 Твои отряды 💣\n"
-    for row in rows:
-        msg += f"• {row['merc_type'].capitalize()} | Роль: {row['role']} | Кол-во: {row['count']}\n"
-    return bot.reply_to(message, cartel_msg("Крестный отец", msg))
+    txt = "Твои люди:\n"
+    for r in rows:
+        txt += f"• {r['merc_type']} — {r['role']} — {r['count']}\n"
 
-# ================== РЕЙД ==================
-def raid(bot, message, uid, u, text):
-    target_user = None
-    if message.reply_to_message:
-        target_user = message.reply_to_message.from_user
+    return bot.reply_to(message, cartel_msg(message.from_user, txt))
+
+# =====================================================
+# ⚔ РЕЙД
+# команда: рейд (ответом)
+# =====================================================
+def raid(bot, message, uid):
+    if not message.reply_to_message:
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Рейды делают ответом на сообщение."
+        ))
+
+    target = message.reply_to_message.from_user
+    tid = str(target.id)
+
+    cursor.execute(
+        "SELECT * FROM cartel_members WHERE user_id=? AND role='рейд'", (uid,)
+    )
+    atk = cursor.fetchall()
+    if not atk:
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Некого отправлять."
+        ))
+
+    atk_power = sum(MERC_TYPES[a["merc_type"]]["attack"] * a["count"] for a in atk)
+
+    cursor.execute(
+        "SELECT * FROM cartel_members WHERE user_id=?", (tid,)
+    )
+    defn = cursor.fetchall()
+    def_power = sum(MERC_TYPES[d["merc_type"]]["attack"] * d["count"] for d in defn)
+
+    if atk_power > def_power:
+        tu = get_user(target)
+        loot = int(tu["money"] * 0.5)
+        add(uid, "money", loot)
+        add(tid, "money", -loot)
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            f"Ты забрал своё.\n{get_name(target)} потерял {loot} 💶."
+        ))
     else:
-        # случайный противник для теста
-        return bot.reply_to(message, cartel_msg("Крестный отец", "❌ Укажи игрока через ответ на сообщение"))
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Тебя ждали. Люди вернулись ни с чем."
+        ))
 
-    target_uid = str(target_user.id)
-    target_data = get_user(target_user)
-    if not target_data:
-        return bot.reply_to(message, cartel_msg("Крестный отец", "❌ Игрок не найден"))
+# =====================================================
+# 🧭 МИССИИ
+# команда: миссии
+# =====================================================
+def missions(bot, message, uid):
+    cursor.execute("SELECT * FROM missions WHERE user_id=?", (uid,))
+    m = cursor.fetchone()
 
-    # Подсчёт силы твоих наёмников для рейда
-    cursor.execute("SELECT merc_type, count FROM cartel_members WHERE user_id=? AND role='рейд'", (uid,))
-    mercs = cursor.fetchall()
-    if not mercs:
-        return bot.reply_to(message, cartel_msg("Крестный отец", "❌ У тебя нет наёмников для рейда"))
+    if m:
+        start = datetime.fromisoformat(m["start_time"])
+        end = start + timedelta(hours=24)
+        if datetime.now() < end:
+            left = int((end - datetime.now()).total_seconds() // 3600)
+            return bot.reply_to(message, cartel_msg(
+                message.from_user,
+                f"Люди вернутся через {left} ч."
+            ))
 
-    your_power = sum(MERC_TYPES[m['merc_type']]['attack'] * m['count'] for m in mercs)
+        cursor.execute("DELETE FROM missions WHERE user_id=?", (uid,))
+        conn.commit()
 
-    # Сила противника — грубая имитация, все роли и типы суммируются
-    cursor.execute("SELECT merc_type, count FROM cartel_members WHERE user_id=?", (target_uid,))
-    target_mercs = cursor.fetchall()
-    target_power = sum(MERC_TYPES[m['merc_type']]['attack'] * m['count'] for m in target_mercs)
+        if random.random() < 0.6:
+            reward = random.randint(500, 1500)
+            add(uid, "money", reward)
+            return bot.reply_to(message, cartel_msg(
+                message.from_user,
+                f"Дело прошло чисто. +{reward} 💶."
+            ))
+        else:
+            return bot.reply_to(message, cartel_msg(
+                message.from_user,
+                "Дело сорвалось. Кто-то не вернулся."
+            ))
 
-    # Битва
-    if your_power > target_power:
-        gain = int(target_data["money"] * 0.5)
-        add_money(uid, gain)
-        return bot.reply_to(message, cartel_msg("Крестный отец",
-                                                f"🏆 Ты победил игрока {target_user.first_name} и забрал {gain} 💶"))
-    else:
-        return bot.reply_to(message, cartel_msg("Крестный отец",
-                                                f"💀 Рейд провален. Игрок {target_user.first_name} сильнее"))
+    cursor.execute(
+        "SELECT * FROM cartel_members WHERE user_id=? AND role='задания'", (uid,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Некого отправлять."
+        ))
 
-# ================== ОБЩИЙ HANDLE ==================
+    cursor.execute("""
+        INSERT INTO missions (user_id, merc_type, count, start_time)
+        VALUES (?, ?, ?, ?)
+    """, (uid, row["merc_type"], row["count"], datetime.now().isoformat()))
+    conn.commit()
+
+    return bot.reply_to(message, cartel_msg(
+        message.from_user,
+        "Люди ушли. Вернутся через сутки."
+    ))
+
+# =====================================================
+# 🧪 АККРЕДИТАЦИЯ (ТЕСТ)
+# =====================================================
+def accreditation(bot, message, uid, text):
+    if uid != ADMIN_ID:
+        return
+    parts = text.split()
+    if len(parts) == 2 and parts[1].isdigit():
+        add(uid, "money", int(parts[1]))
+        return bot.reply_to(message, cartel_msg(
+            message.from_user,
+            "Средства выданы."
+        ))
+
+# =====================================================
+# 🔥 ГЛАВНЫЙ HANDLE (под твой MAIN)
+# =====================================================
 def handle(bot, message):
-    uid = str(message.from_user.id)
-    u = get_user(message.from_user)
+    user = message.from_user
+    uid = str(user.id)
     text = (message.text or "").lower().strip()
+    u = get_user(user)
 
-    if text.startswith("нанять") or text == "отряд":
-        return handle_mercs(bot, message, uid, u, text)
-
-    if text.startswith("рейд"):
-        return raid(bot, message, uid, u, text)
-
-def handle_mercs(bot, message, uid, u, text):
     if text.startswith("нанять"):
-        return hire_merc(bot, message, uid, u, text)
+        return hire(bot, message, uid, u, text)
     if text == "отряд":
-        return show_mercs(bot, message, uid)
+        return squads(bot, message, uid)
+    if text.startswith("рейд"):
+        return raid(bot, message, uid)
+    if text == "миссии":
+        return missions(bot, message, uid)
+    if text.startswith("аккредитация"):
+        return accreditation(bot, message, uid, text)
+
+# =====================================================
+# _________________________________________________
+# КАРТЕЛИ (создание, ранги, банк, участники)
+# _________________________________________________
+
+# =====================================================
+# _________________________________________________
+# КВ — ВОЙНЫ КАРТЕЛЕЙ
+# _________________________________________________
+
+# =====================================================
+# _________________________________________________
+# КОЛОНИИ И КРЫША
+# _________________________________________________
