@@ -102,7 +102,7 @@ def hire(bot, message, uid, text):
     count = int(count)
     cost = MERC_TYPES[merc]["cost"] * count
 
-    # Проверка и списание денег
+    # проверка денег
     u = get_user(user)
     if u["money"] < cost:
         can = u["money"] // MERC_TYPES[merc]["cost"]
@@ -113,20 +113,22 @@ def hire(bot, message, uid, text):
             f"Максимум можешь нанять: {can}"
         )
 
+    # === 1️⃣ списываем деньги ===
     add(uid, "money", -cost)
 
-    # Добавляем наёмников
+    # === 2️⃣ добавляем наёмников в базу ===
     cursor.execute("""
         INSERT INTO cartel_members (user_id, merc_type, role, count)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(user_id, merc_type, role)
         DO UPDATE SET count = count + excluded.count
     """, (uid, merc, role, count, count))
-    conn.commit()
+    conn.commit()  # обязательно коммитим
 
-    # Перечитываем баланс
+    # === 3️⃣ перечитываем баланс ===
     u = get_user(user)
 
+    # === 4️⃣ возвращаем красивый ответ ===
     return bot.reply_to(
         message,
         f"{name}, сделка прошла.\n"
@@ -134,7 +136,6 @@ def hire(bot, message, uid, text):
         f"Роль: {role}.\n"
         f"Осталось денег: {u['money']} 💶"
     )
-
 # =====================================================
 # ОТРЯД
 # =====================================================
