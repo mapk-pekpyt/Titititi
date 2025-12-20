@@ -160,21 +160,27 @@ def hire(bot, message, uid, u, text):
             f"Максимум можешь нанять: {can}."
         )
 
-    add(uid, "money", -cost)
+    # списываем деньги
+add(uid, "money", -cost)
 
-    cursor.execute("""
-        INSERT INTO cartel_members (user_id, merc_type, role, count)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(user_id, merc_type, role)
-        DO UPDATE SET count = count + ?
-    """, (uid, merc, role, count, count))
-    conn.commit()
+# добавляем наёмников
+cursor.execute("""
+    INSERT INTO cartel_members (user_id, merc_type, role, count)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id, merc_type, role)
+    DO UPDATE SET count = count + ?
+""", (uid, merc, role, count, count))
+conn.commit()
 
-    return bot.reply_to(message,
-        f"{name}, сделка закрыта.\n"
-        f"{count} {merc} теперь служат тебе.\n"
-        f"Осталось 💶 {u['money'] - cost}"
-    )
+# ⬇️ ОБЯЗАТЕЛЬНО перечитываем игрока из БД
+u = get_user(message.from_user)
+
+return bot.reply_to(
+    message,
+    f"{name}, сделка закрыта.\n"
+    f"{count} {merc} теперь служат тебе.\n"
+    f"Осталось 💶 {u['money']}"
+)
 
 # =====================================================
 # ===== BLOCK: ОТРЯДЫ =================================
