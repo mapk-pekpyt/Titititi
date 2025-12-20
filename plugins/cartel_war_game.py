@@ -102,7 +102,6 @@ def hire(bot, message, uid, text):
     count = int(count)
     cost = MERC_TYPES[merc]["cost"] * count
 
-    # проверка денег
     u = get_user(user)
     if u["money"] < cost:
         can = u["money"] // MERC_TYPES[merc]["cost"]
@@ -113,26 +112,26 @@ def hire(bot, message, uid, text):
             f"Максимум можешь нанять: {can}"
         )
 
-    # === 1️⃣ списываем деньги ===
+    # 1️⃣ списываем деньги
     add(uid, "money", -cost)
 
-    # === 2️⃣ добавляем наёмников в базу ===
+    # 2️⃣ добавляем наёмников (SQLite: исключаем конфликт)
     cursor.execute("""
         INSERT INTO cartel_members (user_id, merc_type, role, count)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(user_id, merc_type, role)
         DO UPDATE SET count = count + excluded.count
-    """, (uid, merc, role, count, count))
-    conn.commit()  # обязательно коммитим
+    """, (uid, merc, role, count))
+    conn.commit()  # коммитим изменения
 
-    # === 3️⃣ перечитываем баланс ===
+    # 3️⃣ перечитываем баланс
     u = get_user(user)
 
-    # === 4️⃣ возвращаем красивый ответ ===
+    # 4️⃣ готовый красивый ответ
     return bot.reply_to(
         message,
-        f"{name}, сделка прошла.\n"
-        f"{count} {merc} теперь при деле.\n"
+        f"{name}, сделка прошла успешно!\n"
+        f"{count} {merc} теперь в деле.\n"
         f"Роль: {role}.\n"
         f"Осталось денег: {u['money']} 💶"
     )
