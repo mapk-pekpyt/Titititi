@@ -90,37 +90,36 @@ def hire(bot, message, uid, text):
     if len(parts) != 4:
         return bot.reply_to(
             message,
-            say(user,
-                "Говори чётко:\n"
-                "нанять <рейд|защита|задания> <гопник|бандит|солдат> <число>"
-            )
+            f"{name}, формат:\n"
+            f"нанять <рейд|защита|задания> <гопник|бандит|солдат> <число>"
         )
 
     role, merc, count = parts[1], parts[2], parts[3]
 
     if role not in ROLES or merc not in MERC_TYPES or not count.isdigit():
-        return bot.reply_to(message, say(user, "Ты говоришь не по делу."))
+        return bot.reply_to(message, f"{name}, команда неверная.")
 
     count = int(count)
     if count <= 0:
-        return bot.reply_to(message, say(user, "Количество должно быть больше нуля."))
+        return bot.reply_to(message, f"{name}, количество должно быть больше нуля.")
 
     cost = MERC_TYPES[merc]["cost"] * count
     u = get_user(user)
 
     if u["money"] < cost:
-        need = cost - u["money"]
-        can = u["money"] // MERC_TYPES[merc]["cost"]
         return bot.reply_to(
             message,
-            say(user,
-                f"Ты пришёл без денег.\n"
-                f"Не хватает {need} 💶.\n"
-                f"Максимум можешь нанять: {can}"
-            )
+            f"{name}, денег не хватает.\n"
+            f"Нужно {cost}, у тебя {u['money']}."
         )
 
-    # сначала добавляем отряд
+    # === 1️⃣ СПИСЫВАЕМ ДЕНЬГИ ===
+    add(uid, "money", -cost)
+
+    # === 2️⃣ ОБЯЗАТЕЛЬНО перечитываем пользователя ===
+    u = get_user(user)
+
+    # === 3️⃣ ДОБАВЛЯЕМ НАЁМНИКОВ ===
     cursor.execute("""
         INSERT INTO cartel_members (user_id, merc_type, role, count)
         VALUES (?, ?, ?, ?)
@@ -129,21 +128,14 @@ def hire(bot, message, uid, text):
     """, (uid, merc, role, count, count))
     conn.commit()
 
-    # потом списываем деньги
-    add(uid, "money", -cost)
-
-    u = get_user(user)
-
+    # === 4️⃣ ОТВЕТ ===
     return bot.reply_to(
         message,
-        say(user,
-            f"Сделка закрыта.\n"
-            f"{count} {merc} теперь под твоим словом.\n"
-            f"Назначение: {role}.\n"
-            f"Осталось денег: {u['money']} 💶"
-        )
+        f"{name}, сделка прошла.\n"
+        f"{count} {merc} в деле.\n"
+        f"Назначение: {role}.\n"
+        f"Осталось денег: {u['money']} 💶"
     )
-
 # =====================================================
 # ОТРЯДЫ
 # =====================================================
