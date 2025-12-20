@@ -130,23 +130,43 @@ def resolve_battle(attacker_rows, defender_rows, attacker_id, defender_id):
         "escaped": escaped
     }
 
+# =====================================================# =====================================================
+# 👥 НАЁМНИКИ, ОТРЯДЫ, РЕЙД, МИССИИ, АККРЕДИТАЦИЯ
 # =====================================================
-# ===== BLOCK: НАЙМ НАЁМНИКОВ =========================
-# =====================================================
+from plugins.cannabis_game import get_user, add
+from datetime import datetime, timedelta
+import random
+from plugins.common import get_name
+
+MERC_TYPES = {
+    "гопник": {"hp": 100, "attack": 20, "cost": 500},
+    "бандит": {"hp": 150, "attack": 40, "cost": 750},
+    "солдат": {"hp": 350, "attack": 70, "cost": 1000},
+}
+
+ROLES = ["защита", "рейд", "задания"]
+ADMIN_ID = "5791171535"
+
+# ------------------ СТИЛЬ ------------------
+def cartel_msg(user, text):
+    return f"🕴 {get_name(user)}\n{text}"
+
+# ------------------ НАЁМ ------------------
 def hire(bot, message, uid, u, text):
     parts = text.split()
     name = get_name(message.from_user)
 
     if len(parts) != 4:
-        return bot.reply_to(message,
-            f"{name}, говори чётко.\n"
-            f"нанять <защита|рейд|задания> <гопник|бандит|солдат> <число>"
-        )
+        return bot.reply_to(message, f"{name}, говори чётко:\nнанять <защита|рейд|задания> <гопник|бандит|солдат> <число>")
 
     role, merc, count = parts[1], parts[2], parts[3]
 
-    if role not in ROLES or merc not in MERC_TYPES or not count.isdigit():
-        return bot.reply_to(message, f"{name}, ты путаешь слова.")
+    if role not in ROLES:
+        return bot.reply_to(message, f"{name}, такой роли нет. Выбирай: {', '.join(ROLES)}")
+    if merc not in MERC_TYPES:
+        return bot.reply_to(message, f"{name}, таких людей я не нанимаю.")
+    if not count.isdigit() or int(count) <= 0:
+        return bot.reply_to(message, f"{name}, количество должно быть числом.")
 
     count = int(count)
     cost = MERC_TYPES[merc]["cost"] * count
@@ -155,100 +175,112 @@ def hire(bot, message, uid, u, text):
         need = cost - u["money"]
         can = u["money"] // MERC_TYPES[merc]["cost"]
         return bot.reply_to(message,
-            f"{name}, ты пришёл без денег.\n"
-            f"Не хватает {need} 💶.\n"
-            f"Максимум можешь нанять: {can}."
+            f"{name}, пришёл нанимать детей, но денег мало.\nНе хватает {need} 💶.\nМаксимум можно нанять: {can}"
         )
 
     # списываем деньги
-add(uid, "money", -cost)
+    add(uid, "money", -cost)
 
-# добавляем наёмников
-cursor.execute("""
-    INSERT INTO cartel_members (user_id, merc_type, role, count)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(user_id, merc_type, role)
-    DO UPDATE SET count = count + ?
-""", (uid, merc, role, count, count))
-conn.commit()
+    # добавляем наёмников
+    cursor.execute("""
+        INSERT INTO cartel_members (user_id, merc_type, role, count)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, merc_type, role)
+        DO UPDATE SET count = count + ?
+    """, (uid, merc, role, count, count))
+    conn.commit()
 
-# ⬇️ ОБЯЗАТЕЛЬНО перечитываем игрока из БД
-u = get_user(message.from_user)
+    # перечитываем баланс
+    u = get_user(message.from_user)
 
-return bot.reply_to(
-    message,
-    f"{name}, сделка закрыта.\n"
-    f"{count} {merc} теперь служат тебе.\n"
-    f"Осталось 💶 {u['money']}"
-)
+    return bot.reply_to(message,
+        f"{name}, ты нанял {count} {merc}.\n"
+        f"Роль: {role}.\nОтносись к ним с уважением.\nОсталось 💶 {u['money']}"
+    )
 
-# =====================================================
-# ===== BLOCK: ОТРЯДЫ =================================
-# =====================================================
+# ------------------ ОТРЯДЫ ------------------
 def squads(bot, message, uid):
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=?", (uid,))
     rows = cursor.fetchall()
-
     if not rows:
-        return bot.reply_to(message, cartel_msg(
-            message.from_user, "У тебя пока нет людей."
-        ))
+        return bot.reply_to(message, cartel_msg(message.from_user, "У тебя пока нет наемников."))
 
-    txt = "Твоя семья:\n"
+    txt = "Твои отряды:\n"
     for r in rows:
-        txt += f"• {r['merc_type']} — {r['role']} — {r['count']}\n"
+        txt += f"• {r['merc_type']} | Роль: {r['role']} | Кол-во: {r['count']}\n"
 
     return bot.reply_to(message, cartel_msg(message.from_user, txt))
 
-# =====================================================
-# ===== BLOCK: РЕЙД ===================================
-# =====================================================
+# ------------------ РЕЙД ------------------
 def raid(bot, message, uid):
     attacker = message.from_user
     aname = get_name(attacker)
 
     if not message.reply_to_message:
-        return bot.reply_to(message, f"{aname}, рейд — ответом.")
+        return bot.reply_to(message, f"{aname}, рейд делается ответом на сообщение.")
 
     target = message.reply_to_message.from_user
     tid = str(target.id)
     tname = get_name(target)
 
+    # атакующие
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=? AND role='рейд'", (uid,))
     atk = cursor.fetchall()
+    if not atk:
+        return bot.reply_to(message, f"{aname}, тебе некого отправлять в рейд.")
 
+    # защитники
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=? AND role='защита'", (tid,))
     dfn = cursor.fetchall()
 
-    if not atk:
-        return bot.reply_to(message, f"{aname}, тебе некого посылать.")
+    atk_hp = sum(MERC_TYPES[a["merc_type"]]["hp"] * a["count"] for a in atk)
+    atk_power = sum(MERC_TYPES[a["merc_type"]]["attack"] * a["count"] for a in atk)
+    def_hp = sum(MERC_TYPES[d["merc_type"]]["hp"] * d["count"] for d in dfn)
+    def_power = sum(MERC_TYPES[d["merc_type"]]["attack"] * d["count"] for d in dfn)
 
-    result = resolve_battle(atk, dfn, uid, tid)
-    if not result:
-        return bot.reply_to(message, "Бой не состоялся.")
+    # простой бой, урон на силу/HP
+    atk_time = def_hp / max(atk_power,1)
+    def_time = atk_hp / max(def_power,1)
 
-    text = (
-        f"Рейд против {tname}\n\n"
-        f"Победил: {'ты' if result['winner']=='attacker' else tname}\n\n"
-        f"Твои потери: {result['atk_lost']}\n"
-        f"Их потери: {result['def_lost']}\n"
-    )
+    # потери
+    atk_loss = int(sum(a["count"] for a in atk) * 0.5 if atk_time > def_time else sum(a["count"] for a in atk) * 0.2)
+    def_loss = int(sum(d["count"] for d in dfn) * 0.5 if def_time > atk_time else sum(d["count"] for d in dfn) * 0.2)
 
-    if result["escaped"]:
-        text += "\nЧасть бойцов сумела сбежать."
-
-    if result["winner"] == "attacker":
-        tu = get_user(target)
-        loot = int(tu["money"] * 0.5)
+    # случайный шанс побега половины атакующих при поражении
+    if atk_time > def_time:
+        loot = int(get_user(target)["money"] * 0.5)
         add(uid, "money", loot)
         add(tid, "money", -loot)
-        text += f"\nТы забрал {loot} 💶."
+        msg = f"{aname} победил.\nЗабрал {loot} 💶 у {tname}.\nПотери твоих: {atk_loss}\nПотери врага: {def_loss}"
+    else:
+        # шанс бегства
+        for a in atk:
+            if random.random() < 0.5:
+                a_half = a["count"] // 2
+                cursor.execute(
+                    "UPDATE cartel_members SET count = ? WHERE user_id=? AND merc_type=? AND role='рейд'",
+                    (a_half, uid, a["merc_type"])
+                )
+        msg = f"{aname} проиграл.\nПотери твоих: {atk_loss}\nПотери врага: {def_loss}\nПоловина твоих могла сбежать."
 
-    return bot.reply_to(message, cartel_msg(attacker, text))
+    # списываем потери
+    for a in atk:
+        lost = min(a["count"], atk_loss)
+        cursor.execute(
+            "UPDATE cartel_members SET count = count - ? WHERE user_id=? AND merc_type=? AND role='рейд'",
+            (lost, uid, a["merc_type"])
+        )
+    for d in dfn:
+        lost = min(d["count"], def_loss)
+        cursor.execute(
+            "UPDATE cartel_members SET count = count - ? WHERE user_id=? AND merc_type=? AND role='защита'",
+            (lost, tid, d["merc_type"])
+        )
+    conn.commit()
 
-# =====================================================
-# ===== BLOCK: МИССИИ ================================
-# =====================================================
+    return bot.reply_to(message, cartel_msg(attacker, msg))
+
+# ------------------ МИССИИ ------------------
 def missions(bot, message, uid):
     cursor.execute("SELECT * FROM missions WHERE user_id=?", (uid,))
     m = cursor.fetchone()
@@ -258,9 +290,7 @@ def missions(bot, message, uid):
         end = start + timedelta(hours=24)
         if datetime.now() < end:
             left = int((end - datetime.now()).total_seconds() // 3600)
-            return bot.reply_to(message, cartel_msg(
-                message.from_user, f"Люди вернутся через {left} ч."
-            ))
+            return bot.reply_to(message, cartel_msg(message.from_user, f"Люди вернутся через {left} ч."))
 
         cursor.execute("DELETE FROM missions WHERE user_id=?", (uid,))
         conn.commit()
@@ -268,22 +298,14 @@ def missions(bot, message, uid):
         if random.random() < 0.6:
             reward = random.randint(500, 1500)
             add(uid, "money", reward)
-            return bot.reply_to(message, cartel_msg(
-                message.from_user, f"Дело прошло чисто. +{reward} 💶."
-            ))
+            return bot.reply_to(message, cartel_msg(message.from_user, f"Дело прошло чисто. +{reward} 💶"))
         else:
-            return bot.reply_to(message, cartel_msg(
-                message.from_user, "Дело сорвалось. Вернулись не все."
-            ))
+            return bot.reply_to(message, cartel_msg(message.from_user, "Дело сорвалось. Кто-то не вернулся."))
 
-    cursor.execute(
-        "SELECT * FROM cartel_members WHERE user_id=? AND role='задания'", (uid,)
-    )
+    cursor.execute("SELECT * FROM cartel_members WHERE user_id=? AND role='задания'", (uid,))
     row = cursor.fetchone()
     if not row:
-        return bot.reply_to(message, cartel_msg(
-            message.from_user, "Некого отправлять."
-        ))
+        return bot.reply_to(message, cartel_msg(message.from_user, "Некого отправлять."))
 
     cursor.execute("""
         INSERT INTO missions (user_id, merc_type, count, start_time)
@@ -291,43 +313,16 @@ def missions(bot, message, uid):
     """, (uid, row["merc_type"], row["count"], datetime.now().isoformat()))
     conn.commit()
 
-    return bot.reply_to(message, cartel_msg(
-        message.from_user, "Люди ушли. Вернутся через сутки."
-    ))
+    return bot.reply_to(message, cartel_msg(message.from_user, "Люди ушли. Вернутся через сутки."))
 
-# =====================================================
-# ===== BLOCK: АККРЕДИТАЦИЯ ==========================
-# =====================================================
+# ------------------ АККРЕДИТАЦИЯ ------------------
 def accreditation(bot, message, uid, text):
     if uid != ADMIN_ID:
         return
     parts = text.split()
     if len(parts) == 2 and parts[1].isdigit():
         add(uid, "money", int(parts[1]))
-        return bot.reply_to(message, cartel_msg(
-            message.from_user, "Средства выданы."
-        ))
-
-# =====================================================
-# 🔥 HANDLE (ПОД ТВОЙ MAIN)
-# =====================================================
-def handle(bot, message):
-    user = message.from_user
-    uid = str(user.id)
-    text = (message.text or "").lower().strip()
-    u = get_user(user)
-
-    if text.startswith("нанять"):
-        return hire(bot, message, uid, u, text)
-    if text == "отряд":
-        return squads(bot, message, uid)
-    if text.startswith("рейд"):
-        return raid(bot, message, uid)
-    if text == "миссии":
-        return missions(bot, message, uid)
-    if text.startswith("аккредитация"):
-        return accreditation(bot, message, uid, text)
-
+        return bot.reply_to(message, cartel_msg(message.from_user, f"Средства выданы."))
 # =====================================================
 # ===== BLOCK: КАРТЕЛИ (будущее) =====================
 # =====================================================
