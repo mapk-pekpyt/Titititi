@@ -2,6 +2,7 @@ import sqlite3
 import random
 from datetime import datetime, timedelta
 from plugins.common import get_name
+from plugins.cannabis_game import get_user, add  # используем существующий канабиз
 
 DB = "data/cartel_game.db"
 conn = sqlite3.connect(DB, check_same_thread=False)
@@ -9,7 +10,6 @@ conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
 # ================== БАЗЫ ДАННЫХ ==================
-# Игроки и наёмники будут привязаны к канабиз-плагину
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS cartel_members (
     cartel_id INTEGER,
@@ -47,20 +47,6 @@ CREATE TABLE IF NOT EXISTS missions (
 conn.commit()
 
 # ================== ХЕЛПЕРЫ ==================
-def ensure_user(user):
-    """Подготовка пользователя в системе"""
-    # Берем данные из канабиз
-    pass  # уже используется через get_user из канабиз
-
-def get_cartel(user_id):
-    cursor.execute("SELECT * FROM cartel_members WHERE user_id=?", (user_id,))
-    return cursor.fetchone()
-
-def add_money(user_id, amount):
-    """Добавление евриков игроку через канабиз"""
-    from plugins.cannabis_game import add  # используем функцию add
-    add(user_id, "money", amount)
-
 def cooldown(last_time, hours=1):
     if not last_time:
         return True
@@ -73,34 +59,19 @@ def money_word(n):
         return "еврика"
     return "евриков"
 
-# ================== СТИЛЬ СООБЩЕНИЙ ==================
 def cartel_msg(title, text):
     return f"💣 {title} 💣\n{text}"
 
-def mission_msg(user, merc_type, count, reward, success):
-    if success:
-        return f"🚀 {user} успешно выполнил миссию с {count} {merc_type}, получил {reward} 💶"
-    else:
-        return f"💀 {user} провалил миссию с {count} {merc_type}, ничего не получил, часть выживших вернулась"
-
-# ================== ОСНОВНОЙ ОБРАБОТЧИК ==================
-def handle(bot, message):
-    user = message.from_user
-    text = (message.text or "").lower().strip()
-    uid = str(user.id)
-    u = get_user(user)  # функция из канабиз
-
 # ================== НАЕМНИКИ ==================
-# Типы наемников
 MERC_TYPES = {
     "гопник": {"hp": 100, "attack": 20, "cost": 500},
     "бандит": {"hp": 150, "attack": 40, "cost": 750},
     "солдат": {"hp": 350, "attack": 70, "cost": 1000},
 }
 
-# Роли
 ROLES = ["защита", "рейд", "задания"]
 
+# ---------- НАЙМ НАЕМНИКОВ ----------
 def hire_merc(bot, message, uid, u, text):
     parts = text.split()
     if len(parts) != 4:
@@ -122,11 +93,10 @@ def hire_merc(bot, message, uid, u, text):
     if u["money"] < cost:
         return bot.reply_to(message, f"❌ Не хватает {cost - u['money']} {money_word(cost - u['money'])}")
 
-    # Списание денег
-    from plugins.cannabis_game import add
+    # Списание денег через канабиз
     add(uid, "money", -cost)
 
-    # Добавляем всех наемников
+    # Вставка или обновление наемников
     cursor.execute(
         "INSERT INTO cartel_members (user_id, merc_type, role, count) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(user_id, merc_type, role) DO UPDATE SET count=count+?",
@@ -136,7 +106,7 @@ def hire_merc(bot, message, uid, u, text):
 
     return bot.reply_to(message, f"💀 Нанято {count} {merc_type} для {role} за {cost} {money_word(cost)}")
 
-
+# ---------- ПОКАЗАТЬ ОТРЯД НАЕМНИКОВ ----------
 def show_mercs(bot, message, uid):
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=?", (uid,))
     rows = cursor.fetchall()
@@ -149,7 +119,6 @@ def show_mercs(bot, message, uid):
 
     return bot.reply_to(message, msg)
 
-
 # ================== ОБРАБОТКА КОМАНД НАЕМНИКОВ ==================
 def handle_mercs(bot, message, uid, u, text):
     if text.startswith("нанять"):
@@ -157,14 +126,3 @@ def handle_mercs(bot, message, uid, u, text):
 
     if text == "отряд":
         return show_mercs(bot, message, uid)
-    # Здесь будет блок команд картеля
-    # Здесь будет блок миссий
-    # Здесь будет блок рейдов
-    # Здесь будет блок КВ
-    # Здесь будет блок управления членами (посвятить, окрестить, обесценить, отречь, возвысить)
-    # Здесь будет блок наградить
-
-    # Шаблон ответа
-    # return bot.reply_to(message, cartel_msg("Название", "Текст"))
-
-# ================== КОНЕЦ ШАПКИ ==================
