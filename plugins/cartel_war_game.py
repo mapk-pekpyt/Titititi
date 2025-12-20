@@ -55,14 +55,15 @@ def hire(bot, message, uid, u, text):
     parts = text.split()
     name = get_name(message.from_user)
     if len(parts) != 4:
-        return bot.reply_to(message, f"{name}, формулируй так:\nнанять <защита|рейд|задания> <гопник|бандит|солдат> <число>")
+        return bot.reply_to(message,
+            f"💣 Крестный отец 💣\n{name}, формулируй точно:\nнанять <защита|рейд|задания> <гопник|бандит|солдат> <число>")
 
     role, merc, count = parts[1], parts[2], parts[3]
     if role not in ROLES:
         return bot.reply_to(message, f"{name}, роли семьи: {', '.join(ROLES)}")
     if merc not in MERC_TYPES:
         return bot.reply_to(message, f"{name}, таких людей я не нанимаю.")
-    if not count.isdigit() or int(count)<=0:
+    if not count.isdigit() or int(count) <= 0:
         return bot.reply_to(message, f"{name}, количество должно быть числом больше нуля.")
 
     count = int(count)
@@ -71,9 +72,9 @@ def hire(bot, message, uid, u, text):
         need = cost - u["money"]
         can = u["money"] // MERC_TYPES[merc]["cost"]
         return bot.reply_to(message,
-            f"{name}, пришёл нанимать, но не взял достаточно денег.\nНе хватает {need} 💶.\nМожно нанять: {can}")
+            f"💣 Крестный отец 💣\n{name}, пришёл нанимать, но денег мало.\nНе хватает {need} 💶.\nМожно нанять: {can}")
 
-    # Добавляем наёмников
+    # Добавляем наёмников в базу
     cursor.execute("""
         INSERT INTO cartel_members (user_id, merc_type, role, count)
         VALUES (?, ?, ?, ?)
@@ -81,14 +82,13 @@ def hire(bot, message, uid, u, text):
     """, (uid, merc, role, count, count))
     conn.commit()
 
-    # Только после успешного найма списываем деньги
+    # Только после успешного добавления списываем деньги
     add(uid, "money", -cost)
     u = get_user(message.from_user)
 
     return bot.reply_to(message,
-        f"{name}, ты нанял {count} {merc}.\n"
-        f"Роль: {role}\n"
-        f"Относись к ним с уважением, они теперь часть семьи.\n"
+        f"💣 Крестный отец 💣\n{name}, ты нанял {count} {merc}.\n"
+        f"Роль: {role}\nОтносись к ним с уважением — они теперь часть семьи.\n"
         f"💶 Осталось: {u['money']}")
 
 # =====================================================
@@ -105,11 +105,10 @@ def squads(bot, message, uid):
         if r["count"] > 0:
             roles[r["role"]].append(f"{r['merc_type']} {r['count']}")
 
-    txt = ""
-    for role in ["рейд", "защита", "задания"]:
+    txt = "💣 Твои отряды 💣\n"
+    for role in ["рейд","защита","задания"]:
         if roles[role]:
             txt += f"{role.capitalize()}:\n" + "\n".join(roles[role]) + "\n"
-
     return bot.reply_to(message, cartel_msg(message.from_user, txt.strip()))
 
 # =====================================================
@@ -137,13 +136,14 @@ def raid(bot, message, uid):
     if not result:
         return bot.reply_to(message, f"{aname}, бой не состоялся.")
 
-    # Формируем красивый отчет
-    txt = f"💥 Рейд на {tname} 💥\n\n"
+    txt = f"💣 Рейд на {tname} 💣\n\n"
     txt += f"🏆 Победитель: {'Ты' if result['winner']=='attacker' else tname}\n\n"
-    txt += "⚔ Потери твоих:\n" + "\n".join(result['atk_report']) + "\n\n" if result['atk_report'] else ""
-    txt += "🛡 Потери противника:\n" + "\n".join(result['def_report']) + "\n\n" if result['def_report'] else ""
+    if result['atk_report']:
+        txt += "⚔ Потери твоих:\n" + "\n".join(result['atk_report']) + "\n"
+    if result['def_report']:
+        txt += "🛡 Потери противника:\n" + "\n".join(result['def_report']) + "\n"
     if result['escaped']:
-        txt += "Часть бойцов могла сбежать.\n"
+        txt += "💨 Часть бойцов могла сбежать.\n"
     if result['winner']=='attacker':
         tu = get_user(target)
         loot = int(tu["money"]*0.5)
@@ -159,19 +159,11 @@ def raid(bot, message, uid):
 def missions(bot, message, uid):
     cursor.execute("SELECT * FROM missions WHERE user_id=?", (uid,))
     m = cursor.fetchone()
-
     if m:
         start = datetime.fromisoformat(m["start_time"])
         end = start + timedelta(hours=24)
-        if datetime.now() < end:
-            left = int((end - datetime.now()).total_seconds()//3600)
-            return bot.reply_to(message, cartel_msg(message.from_user, f"Люди вернутся через {left} ч."))
-        cursor.execute("DELETE FROM missions WHERE user_id=?", (uid,))
-        conn.commit()
-        reward = random.randint(500,1500)
-        add(uid, "money", reward) if random.random() < 0.6 else None
-        msg = f"Дело завершено.\n{'Вы получили '+str(reward)+' 💶' if random.random()<0.6 else 'Кто-то не вернулся'}"
-        return bot.reply_to(message, cartel_msg(message.from_user, msg))
+        left = int((end - datetime.now()).total_seconds()//3600)
+        return bot.reply_to(message, cartel_msg(message.from_user, f"Люди вернутся через {left} ч."))
 
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=? AND role='задания'", (uid,))
     row = cursor.fetchone()
@@ -181,8 +173,7 @@ def missions(bot, message, uid):
     cursor.execute("INSERT INTO missions (user_id, merc_type, count, start_time) VALUES (?, ?, ?, ?)",
                    (uid, row["merc_type"], row["count"], datetime.now().isoformat()))
     conn.commit()
-    return bot.reply_to(message, cartel_msg(message.from_user, "Люди ушли на задания. Вернутся через сутки."))
-
+    return bot.reply_to(message, cartel_msg(message.from_user, "💣 Люди ушли на задания. Вернутся через сутки."))
 # =====================================================
 # ===== АККРЕДИТАЦИЯ =====
 # =====================================================
