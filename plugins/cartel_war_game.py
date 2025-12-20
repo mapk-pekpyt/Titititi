@@ -157,60 +157,79 @@ def squads(bot, message, uid):
 # РЕЙД
 # =====================================================
 def raid(bot, message, uid):
+    user = message.from_user
+    name = get_name(user)
+
     if not message.reply_to_message:
-        return bot.reply_to(message, "Рейд — ответом на сообщение.")
+        return bot.reply_to(message, f"{name}, рейд — ответом.")
 
     target = message.reply_to_message.from_user
+
+    if target.is_bot:
+        return bot.reply_to(message, f"{name}, ты серьёзно? Это бот.")
+
+    if str(target.id) == uid:
+        return bot.reply_to(message, f"{name}, себя рейдить — клиника.")
+
     tid = str(target.id)
+    tname = get_name(target)
 
-    cursor.execute("SELECT * FROM cartel_members WHERE user_id=? AND role='рейд'", (uid,))
+    cursor.execute(
+        "SELECT * FROM cartel_members WHERE user_id=? AND role='рейд'",
+        (uid,)
+    )
     atk = cursor.fetchall()
-    if not atk:
-        return bot.reply_to(message, say(message.from_user, "Некем бить."))
 
-    cursor.execute("SELECT * FROM cartel_members WHERE user_id=? AND role='защита'", (tid,))
+    if not atk:
+        return bot.reply_to(message, f"{name}, тебе не с кем идти.")
+
+    cursor.execute(
+        "SELECT * FROM cartel_members WHERE user_id=? AND role='защита'",
+        (tid,)
+    )
     dfn = cursor.fetchall()
 
-    atk_hp, atk_atk, atk_units = army_power(atk)
-    def_hp, def_atk, def_units = army_power(dfn)
+    atk_hp, atk_dps, atk_units = army_power(atk)
+    def_hp, def_dps, def_units = army_power(dfn)
 
-    if atk_atk <= 0:
-        return bot.reply_to(message, "Бой не состоялся.")
+    if atk_dps <= 0:
+        return bot.reply_to(message, f"{name}, твои бойцы не умеют стрелять.")
 
-    atk_time = def_hp / atk_atk if def_hp else 0
-    def_time = atk_hp / def_atk if def_atk else 999
+    # время уничтожения
+    time_to_kill_def = def_hp / atk_dps if def_hp > 0 else 0
+    time_to_kill_atk = atk_hp / def_dps if def_dps > 0 else 999
 
-    if atk_time < def_time:
+    if time_to_kill_def < time_to_kill_atk:
         # победа
-        loss_a = int(atk_units * 0.3)
-        loss_d = def_units
-        remove_units(uid, "рейд", loss_a)
-        remove_units(tid, "защита", loss_d)
+        atk_loss = int(atk_units * random.uniform(0.2, 0.4))
+        def_loss = def_units
+
+        remove_units(uid, "рейд", atk_loss)
+        remove_units(tid, "защита", def_loss)
 
         tu = get_user(target)
-        loot = int(tu["money"] * 0.5)
+        loot = int(tu["money"] * 0.4)
         add(uid, "money", loot)
         add(tid, "money", -loot)
 
         text = (
-            f"Ты зашёл жёстко.\n"
-            f"Забрал {loot} 💶.\n\n"
+            f"Ты зашёл жёстко.\n\n"
+            f"Добыча: {loot} 💶\n\n"
             f"Потери:\n"
-            f"У тебя: {loss_a}\n"
-            f"У него: {loss_d}"
+            f"У тебя: {atk_loss}\n"
+            f"У них: {def_loss}"
         )
     else:
-        loss_a = int(atk_units * 0.7)
-        remove_units(uid, "рейд", loss_a)
+        atk_loss = int(atk_units * random.uniform(0.6, 0.9))
+        remove_units(uid, "рейд", atk_loss)
 
         text = (
-            f"Тебя ждали.\n"
-            f"Рейд захлебнулся.\n\n"
-            f"Потери: {loss_a}"
+            f"Засада.\n\n"
+            f"Рейд сорвался.\n"
+            f"Потери: {atk_loss}"
         )
 
-    return bot.reply_to(message, say(message.from_user, text))
-
+    return bot.reply_to(message, f"{name},\n{text}")
 # =====================================================
 # АККРЕДИТАЦИЯ
 # =====================================================
