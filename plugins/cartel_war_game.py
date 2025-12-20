@@ -49,48 +49,68 @@ def cartel_msg(user, text):
     return f"💣 Крестный отец 💣\n{get_name(user)}\n{text}"
 
 # =====================================================
-# ===== НАЁМНИКИ =====
+# ===== НАЙМ НАЁМНИКОВ (ИСПРАВЛЕНО) ====================
 # =====================================================
 def hire(bot, message, uid, u, text):
     parts = text.split()
     name = get_name(message.from_user)
+
     if len(parts) != 4:
-        return bot.reply_to(message,
-            f"💣 Крестный отец 💣\n{name}, формулируй точно:\nнанять <защита|рейд|задания> <гопник|бандит|солдат> <число>")
+        return bot.reply_to(
+            message,
+            f"{name}, говори нормально.\n"
+            f"Нанять <защита|рейд|задания> <гопник|бандит|солдат> <число>"
+        )
 
     role, merc, count = parts[1], parts[2], parts[3]
+
     if role not in ROLES:
-        return bot.reply_to(message, f"{name}, роли семьи: {', '.join(ROLES)}")
+        return bot.reply_to(message, f"{name}, такой роли нет.")
     if merc not in MERC_TYPES:
-        return bot.reply_to(message, f"{name}, таких людей я не нанимаю.")
+        return bot.reply_to(message, f"{name}, таких людей у меня не бывает.")
     if not count.isdigit() or int(count) <= 0:
-        return bot.reply_to(message, f"{name}, количество должно быть числом больше нуля.")
+        return bot.reply_to(message, f"{name}, число назови, а не херню.")
 
     count = int(count)
     cost = MERC_TYPES[merc]["cost"] * count
+
     if u["money"] < cost:
         need = cost - u["money"]
         can = u["money"] // MERC_TYPES[merc]["cost"]
-        return bot.reply_to(message,
-            f"💣 Крестный отец 💣\n{name}, пришёл нанимать, но денег мало.\nНе хватает {need} 💶.\nМожно нанять: {can}")
+        return bot.reply_to(
+            message,
+            f"{name}, ты пришёл ко мне без денег?\n"
+            f"Не хватает {need} 💶.\n"
+            f"Максимум можешь нанять: {can}"
+        )
 
-    # Добавляем наёмников в базу
+    # ⚠️ СНАЧАЛА ПРОБУЕМ СПИСАТЬ ДЕНЬГИ
+    ok = add(uid, "money", -cost)
+    if ok is False:
+        return bot.reply_to(
+            message,
+            f"{name}, сделка не прошла.\n"
+            f"Деньги у тебя мутные, иди разберись."
+        )
+
+    # ✅ ТОЛЬКО ПОСЛЕ ЭТОГО ДОБАВЛЯЕМ НАЁМНИКОВ
     cursor.execute("""
         INSERT INTO cartel_members (user_id, merc_type, role, count)
         VALUES (?, ?, ?, ?)
-        ON CONFLICT(user_id, merc_type, role) DO UPDATE SET count=count+?
+        ON CONFLICT(user_id, merc_type, role)
+        DO UPDATE SET count = count + ?
     """, (uid, merc, role, count, count))
     conn.commit()
 
-    # Только после успешного добавления списываем деньги
-    add(uid, "money", -cost)
     u = get_user(message.from_user)
 
-    return bot.reply_to(message,
-        f"💣 Крестный отец 💣\n{name}, ты нанял {count} {merc}.\n"
-        f"Роль: {role}\nОтносись к ним с уважением — они теперь часть семьи.\n"
-        f"💶 Осталось: {u['money']}")
-
+    return bot.reply_to(
+        message,
+        f"{name}, договор закрыт.\n"
+        f"{count} {merc} теперь работают на тебя.\n"
+        f"Роль: {role}.\n"
+        f"Деньги остались: {u['money']} 💶"
+    )
 # =====================================================
 # ===== ОТРЯДЫ =====
 # =====================================================
