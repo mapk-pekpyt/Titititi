@@ -156,80 +156,73 @@ def squads(bot, message, uid):
 # =====================================================
 # РЕЙД
 # =====================================================
-def raid(bot, message, uid):
+def missions(bot, message, uid):
     user = message.from_user
     name = get_name(user)
 
-    if not message.reply_to_message:
-        return bot.reply_to(message, f"{name}, рейд — ответом.")
+    cursor.execute("SELECT * FROM missions WHERE user_id=?", (uid,))
+    m = cursor.fetchone()
 
-    target = message.reply_to_message.from_user
+    if m:
+        start = datetime.fromisoformat(m["start_time"])
+        end = start + timedelta(hours=24)
 
-    if target.is_bot:
-        return bot.reply_to(message, f"{name}, ты серьёзно? Это бот.")
+        if datetime.now() < end:
+            hours = int((end - datetime.now()).total_seconds() // 3600)
+            return bot.reply_to(message, f"{name}, люди вернутся через {hours} ч.")
 
-    if str(target.id) == uid:
-        return bot.reply_to(message, f"{name}, себя рейдить — клиника.")
+        cursor.execute("DELETE FROM missions WHERE user_id=?", (uid,))
+        conn.commit()
 
-    tid = str(target.id)
-    tname = get_name(target)
+        cursor.execute(
+            "SELECT * FROM cartel_members WHERE user_id=? AND role='задания'",
+            (uid,)
+        )
+        rows = cursor.fetchall()
+
+        units = sum(r["count"] for r in rows)
+
+        # шанс успеха падает с ростом армии
+        success_chance = max(0.15, 0.8 - units * 0.02)
+
+        if random.random() < success_chance:
+            reward = units * random.randint(200, 400)
+            add(uid, "money", reward)
+            return bot.reply_to(
+                message,
+                f"{name}, дело прошло.\n"
+                f"Людей было много — денег тоже.\n"
+                f"+{reward} 💶"
+            )
+        else:
+            loss = int(units * random.uniform(0.3, 0.6))
+            remove_units(uid, "задания", loss)
+            return bot.reply_to(
+                message,
+                f"{name}, всё накрылось.\n"
+                f"Потеряно бойцов: {loss}"
+            )
 
     cursor.execute(
-        "SELECT * FROM cartel_members WHERE user_id=? AND role='рейд'",
+        "SELECT * FROM cartel_members WHERE user_id=? AND role='задания'",
         (uid,)
     )
-    atk = cursor.fetchall()
+    rows = cursor.fetchall()
 
-    if not atk:
-        return bot.reply_to(message, f"{name}, тебе не с кем идти.")
+    if not rows:
+        return bot.reply_to(message, f"{name}, некого отправлять.")
 
     cursor.execute(
-        "SELECT * FROM cartel_members WHERE user_id=? AND role='защита'",
-        (tid,)
+        "INSERT INTO missions (user_id, start_time) VALUES (?, ?)",
+        (uid, datetime.now().isoformat())
     )
-    dfn = cursor.fetchall()
+    conn.commit()
 
-    atk_hp, atk_dps, atk_units = army_power(atk)
-    def_hp, def_dps, def_units = army_power(dfn)
-
-    if atk_dps <= 0:
-        return bot.reply_to(message, f"{name}, твои бойцы не умеют стрелять.")
-
-    # время уничтожения
-    time_to_kill_def = def_hp / atk_dps if def_hp > 0 else 0
-    time_to_kill_atk = atk_hp / def_dps if def_dps > 0 else 999
-
-    if time_to_kill_def < time_to_kill_atk:
-        # победа
-        atk_loss = int(atk_units * random.uniform(0.2, 0.4))
-        def_loss = def_units
-
-        remove_units(uid, "рейд", atk_loss)
-        remove_units(tid, "защита", def_loss)
-
-        tu = get_user(target)
-        loot = int(tu["money"] * 0.4)
-        add(uid, "money", loot)
-        add(tid, "money", -loot)
-
-        text = (
-            f"Ты зашёл жёстко.\n\n"
-            f"Добыча: {loot} 💶\n\n"
-            f"Потери:\n"
-            f"У тебя: {atk_loss}\n"
-            f"У них: {def_loss}"
-        )
-    else:
-        atk_loss = int(atk_units * random.uniform(0.6, 0.9))
-        remove_units(uid, "рейд", atk_loss)
-
-        text = (
-            f"Засада.\n\n"
-            f"Рейд сорвался.\n"
-            f"Потери: {atk_loss}"
-        )
-
-    return bot.reply_to(message, f"{name},\n{text}")
+    return bot.reply_to(
+        message,
+        f"{name}, люди ушли на дело.\n"
+        f"Вернутся через сутки."
+    )
 # =====================================================
 # АККРЕДИТАЦИЯ
 # =====================================================
