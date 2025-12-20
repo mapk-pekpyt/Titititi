@@ -2,7 +2,7 @@ import sqlite3
 import random
 from datetime import datetime, timedelta
 from plugins.common import get_name
-from plugins.cannabis_game import get_user, add  # используем существующий канабиз
+from plugins import cannabis_game  # берём баланс и функцию add
 
 DB = "data/cartel_game.db"
 conn = sqlite3.connect(DB, check_same_thread=False)
@@ -10,47 +10,26 @@ conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
 # ================== БАЗЫ ДАННЫХ ==================
+# Наёмники пользователей
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS cartel_members (
-    cartel_id INTEGER,
-    user_id TEXT,
-    rank TEXT DEFAULT 'новичок',
-    role TEXT DEFAULT 'защита',
-    merc_type TEXT,
-    count INTEGER DEFAULT 0,
-    PRIMARY KEY(cartel_id, user_id, merc_type, role)
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS cartels (
-    cartel_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    boss_id TEXT,
-    bank INTEGER DEFAULT 0
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS missions (
-    mission_id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT,
     merc_type TEXT,
     role TEXT,
-    count INTEGER,
-    start_time TEXT,
-    duration_hours INTEGER,
-    reward INTEGER,
-    success INTEGER DEFAULT 0
+    count INTEGER DEFAULT 0,
+    PRIMARY KEY(user_id, merc_type, role)
 )
 """)
 conn.commit()
 
 # ================== ХЕЛПЕРЫ ==================
-def cooldown(last_time, hours=1):
-    if not last_time:
-        return True
-    return datetime.now() - datetime.fromisoformat(last_time) >= timedelta(hours=hours)
+def get_user(user):
+    """Берём данные пользователя из канабиза"""
+    return cannabis_game.get_user(user)
+
+def add_money(user_id, amount):
+    """Добавление евриков через канабиз"""
+    cannabis_game.add(user_id, "money", amount)
 
 def money_word(n):
     if n % 10 == 1 and n % 100 != 11:
@@ -59,10 +38,11 @@ def money_word(n):
         return "еврика"
     return "евриков"
 
+# ================== СООБЩЕНИЯ ==================
 def cartel_msg(title, text):
     return f"💣 {title} 💣\n{text}"
 
-# ================== НАЕМНИКИ ==================
+# ================== НАЁМНИКИ ==================
 MERC_TYPES = {
     "гопник": {"hp": 100, "attack": 20, "cost": 500},
     "бандит": {"hp": 150, "attack": 40, "cost": 750},
@@ -71,58 +51,64 @@ MERC_TYPES = {
 
 ROLES = ["защита", "рейд", "задания"]
 
-# ---------- НАЙМ НАЕМНИКОВ ----------
 def hire_merc(bot, message, uid, u, text):
     parts = text.split()
     if len(parts) != 4:
         return bot.reply_to(message, "❌ Пример: нанять защита гопник 5")
 
     role, merc_type, count = parts[1], parts[2], parts[3]
+
     if role not in ROLES:
-        return bot.reply_to(message, f"❌ Неверная роль. Выбери: {', '.join(ROLES)}")
-
+        return bot.reply_to(message, f"❌ Роль неверна. Выбери: {', '.join(ROLES)}")
     if merc_type not in MERC_TYPES:
-        return bot.reply_to(message, f"❌ Неверный тип наемника. Доступные: {', '.join(MERC_TYPES.keys())}")
-
+        return bot.reply_to(message, f"❌ Тип неверен. Доступные: {', '.join(MERC_TYPES.keys())}")
     if not count.isdigit():
         return bot.reply_to(message, "❌ Количество должно быть числом")
 
     count = int(count)
     cost = MERC_TYPES[merc_type]["cost"] * count
-
     if u["money"] < cost:
         return bot.reply_to(message, f"❌ Не хватает {cost - u['money']} {money_word(cost - u['money'])}")
 
-    # Списание денег через канабиз
-    add(uid, "money", -cost)
+    # Списываем деньги
+    add_money(uid, -cost)
 
-    # Вставка или обновление наемников
-    cursor.execute(
-        "INSERT INTO cartel_members (user_id, merc_type, role, count) VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(user_id, merc_type, role) DO UPDATE SET count=count+?",
-        (uid, merc_type, role, count, count)
-    )
+    # Добавляем наёмников
+    cursor.execute("""
+        INSERT INTO cartel_members (user_id, merc_type, role, count)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, merc_type, role) DO UPDATE SET count=count+?
+    """, (uid, merc_type, role, count, count))
     conn.commit()
 
     return bot.reply_to(message, f"💀 Нанято {count} {merc_type} для {role} за {cost} {money_word(cost)}")
 
-# ---------- ПОКАЗАТЬ ОТРЯД НАЕМНИКОВ ----------
 def show_mercs(bot, message, uid):
     cursor.execute("SELECT * FROM cartel_members WHERE user_id=?", (uid,))
     rows = cursor.fetchall()
     if not rows:
-        return bot.reply_to(message, "🤷‍♂️ У тебя пока нет наемников")
+        return bot.reply_to(message, "🤷‍♂️ У тебя пока нет наёмников")
 
-    msg = "💣 Отряды наемников 💣\n"
+    msg = "💣 Отряды наёмников 💣\n"
     for row in rows:
         msg += f"• {row['merc_type'].capitalize()} | Роль: {row['role']} | Кол-во: {row['count']}\n"
 
     return bot.reply_to(message, msg)
 
-# ================== ОБРАБОТКА КОМАНД НАЕМНИКОВ ==================
 def handle_mercs(bot, message, uid, u, text):
     if text.startswith("нанять"):
         return hire_merc(bot, message, uid, u, text)
-
     if text == "отряд":
         return show_mercs(bot, message, uid)
+
+# ================== ОБЩИЙ HANDLE ==================
+def handle(bot, message):
+    uid = str(message.from_user.id)
+    u = get_user(message.from_user)
+    text = (message.text or "").lower().strip()
+
+    # ---------- НАЁМНИКИ ----------
+    if text.startswith("нанять") or text == "отряд":
+        return handle_mercs(bot, message, uid, u, text)
+
+    # ---------- ЗДЕСЬ БУДУТ БЛОКИ: рейды, миссии, картель, награды ----------
