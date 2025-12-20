@@ -82,38 +82,36 @@ def remove_units(user_id, role, loss):
 # =====================================================
 def hire(bot, message, uid, text):
     parts = text.split()
-    name = get_name(message.from_user)
+    user = message.from_user
+    name = get_name(user)
 
     if len(parts) != 4:
         return bot.reply_to(
             message,
-            say(message.from_user,
-                "Пиши так:\n"
-                "нанять <рейд|защита|задания> <гопник|бандит|солдат> <число>"
-            )
+            f"{name}, пиши нормально:\n"
+            f"нанять <рейд|защита|задания> <гопник|бандит|солдат> <число>"
         )
 
     role, merc, count = parts[1], parts[2], parts[3]
 
     if role not in ROLES or merc not in MERC_TYPES or not count.isdigit():
-        return bot.reply_to(message, say(message.from_user, "Ты сам понял, что написал?"))
+        return bot.reply_to(message, f"{name}, ты несёшь хуйню.")
 
     count = int(count)
+    if count <= 0:
+        return bot.reply_to(message, f"{name}, количество должно быть больше нуля.")
+
     cost = MERC_TYPES[merc]["cost"] * count
-    u = get_user(message.from_user)
+    u = get_user(user)
 
     if u["money"] < cost:
         return bot.reply_to(
             message,
-            say(message.from_user,
-                f"Денег не хватает.\n"
-                f"Нужно {cost}, у тебя {u['money']}."
-            )
+            f"{name}, денег мало.\n"
+            f"Нужно {cost}, у тебя {u['money']}."
         )
 
-    # списываем
-    add(uid, "money", -cost)
-
+    # 1️⃣ сначала добавляем наёмников
     cursor.execute("""
         INSERT INTO cartel_members (user_id, merc_type, role, count)
         VALUES (?, ?, ?, ?)
@@ -122,17 +120,19 @@ def hire(bot, message, uid, text):
     """, (uid, merc, role, count, count))
     conn.commit()
 
-    u = get_user(message.from_user)
+    # 2️⃣ потом списываем деньги
+    add(uid, "money", -cost)
+
+    # 3️⃣ перечитываем баланс
+    u = get_user(user)
 
     return bot.reply_to(
         message,
-        say(message.from_user,
-            f"{count} {merc} теперь у тебя.\n"
-            f"Роль: {role}.\n"
-            f"Осталось денег: {u['money']} 💶"
-        )
+        f"{name}, договор закрыт.\n"
+        f"{count} {merc} теперь работают на тебя.\n"
+        f"Роль: {role}.\n"
+        f"Осталось денег: {u['money']} 💶"
     )
-
 # =====================================================
 # ОТРЯД
 # =====================================================
