@@ -113,4 +113,20 @@ TRIGGERS = {
     "рейд": "cartel_war_game",       # рейд [@игрок]
     "миссии": "cartel_war_game",  # отправка на миссии
     "аккредитация": "cartel_war_game",
+    # ================= BAN SYSTEM =================
+    "бан": "ban",
+    "ban": "ban",
+
+    "кик": "ban",
+    "kick": "ban",
+
+    "разбан": "ban",
+    "unban": "ban",
+
+    "щит": "ban",
+    "shield": "ban",
+
+    "kickprice": "ban",
+    "banprice": "ban",
+    "banpricer": "ban",
 }
