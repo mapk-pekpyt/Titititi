@@ -1,376 +1,287 @@
 import os
 import json
-import asyncio
 from datetime import datetime, timedelta
-from telebot.types import ChatPermissions, LabeledPrice
+from telebot.types import LabeledPrice, ChatPermissions
 
-DATA_FILE = "data/ban_price.json"
-DEFAULT_KICK_PRICE = 5
-DEFAULT_BAN_PRICE = 10
-DEFAULT_BAN_HOUR_PRICE = 3
-PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
+DATA_DIR = "data"
+PRICE_FILE = f"{DATA_DIR}/ban_prices.json"
+SHIELD_FILE = f"{DATA_DIR}/shields.json"
+
 ADMIN_ID = 5791171535
+PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
+
+DEFAULT_PRICES = {
+    "kick": 0,
+    "ban": 3,
+    "unban": 20,
+    "shield": 5
+}
 
 
-# --------- Имена ---------
-def get_name(user):
-    fn = getattr(user, "first_name", None)
-    ln = getattr(user, "last_name", None)
-    if fn and ln:
-        return f"{fn} {ln}"
-    if fn:
-        return fn
-    return "Пользователь"
+# =========================
+# FILE HELPERS
+# =========================
+def ensure_dir():
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def get_name_by_id(bot, chat_id, user_id):
+def load_json(path, default):
+    ensure_dir()
     try:
-        m = bot.get_chat_member(chat_id, user_id).user
-        return get_name(m)
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
     except:
-        return "Пользователь"
+        return default.copy()
 
 
-# --------- ЦЕНЫ ---------
-def ensure_data_dir():
-    d = os.path.dirname(DATA_FILE)
-    if d:
-        os.makedirs(d, exist_ok=True)
+def save_json(path, data):
+    ensure_dir()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
 
 
 def load_prices():
-    ensure_data_dir()
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return {
-                "kick": data.get("kick", DEFAULT_KICK_PRICE),
-                "ban": data.get("ban", DEFAULT_BAN_PRICE),
-                "ban_hour": data.get("ban_hour", DEFAULT_BAN_HOUR_PRICE)
-            }
-    except:
-        return {
-            "kick": DEFAULT_KICK_PRICE,
-            "ban": DEFAULT_BAN_PRICE,
-            "ban_hour": DEFAULT_BAN_HOUR_PRICE
-        }
+    return load_json(PRICE_FILE, DEFAULT_PRICES)
 
 
-def save_prices(prices):
-    ensure_data_dir()
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(prices, f)
+def save_prices(data):
+    save_json(PRICE_FILE, data)
 
 
-# --------- БАН/КИК ---------
-def ban_user(bot, chat_id, user_id, until_date=None):
-    """Забанить пользователя"""
-    bot.ban_chat_member(chat_id, user_id, until_date=until_date)
+def load_shields():
+    return load_json(SHIELD_FILE, {})
+
+
+def save_shields(data):
+    save_json(SHIELD_FILE, data)
+
+
+# =========================
+# HELPERS
+# =========================
+def name(user):
+    return getattr(user, "first_name", None) or "пользователь"
+
+
+def is_admin(user_id):
+    return user_id == ADMIN_ID
+
+
+def restrict(bot, chat_id, user_id, minutes=None):
+    until = None
+    if minutes:
+        until = int((datetime.utcnow() + timedelta(minutes=minutes)).timestamp())
+
+    perms = ChatPermissions(
+        can_send_messages=False,
+        can_send_media_messages=False,
+        can_send_other_messages=False,
+        can_add_web_page_previews=False
+    )
+
+    bot.restrict_chat_member(chat_id, user_id, permissions=perms, until_date=until)
+
+
+def ban_user(bot, chat_id, user_id, hours=None):
+    until = None
+    if hours:
+        until = int((datetime.utcnow() + timedelta(hours=hours)).timestamp())
+
+    bot.ban_chat_member(chat_id, user_id, until_date=until)
 
 
 def unban_user(bot, chat_id, user_id):
-    """Разбанить пользователя"""
     bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
 
 
-def kick_user(bot, chat_id, user_id):
-    """Кикнуть пользователя"""
-    bot.ban_chat_member(chat_id, user_id)
-    bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
+def has_shield(chat_id, user_id):
+    data = load_shields()
+    return str(chat_id) in data and str(user_id) in data[str(chat_id)]
 
 
-async def auto_unban(bot, chat_id, user_id, seconds, target_name, admin_name):
-    """Автоматический разбан через seconds секунд"""
-    await asyncio.sleep(seconds)
+def consume_shield(chat_id, user_id):
+    data = load_shields()
+    c = str(chat_id)
+    u = str(user_id)
+
+    if c in data and u in data[c]:
+        del data[c][u]
+        if not data[c]:
+            del data[c]
+        save_shields(data)
+        return True
+    return False
+
+
+# =========================
+# CHAT MEMBER PROTECTION
+# =========================
+def handle_chat_member_update(bot, update):
+    """
+    защита админа — если его банят/кикают → сразу откат
+    """
     try:
-        unban_user(bot, chat_id, user_id)
-        bot.send_message(
-            chat_id,
-            f"🔓 {target_name}, господин {admin_name} решил тебя помиловать, целуй ему ноги пес"
-        )
-    except:
-        pass
+        if not update or not update.new_chat_member:
+            return
 
+        user = update.new_chat_member.user
+        status = update.new_chat_member.status
+        chat_id = update.chat.id
 
-# --------- ОБРАБОТКА ПЛАТЕЖЕЙ ---------
-def handle_successful(bot, message):
-    payload = getattr(message.successful_payment, "invoice_payload", "") or \
-              getattr(message.successful_payment, "payload", "")
-    
-    if not payload.startswith("ban:"):
-        return
-    
-    parts = payload.split(":")
-    action = parts[0]
-    
-    if action == "ban:kick":
-        _, chat_id_s, payer_id_s, target_id_s = parts
-        chat_id = int(chat_id_s)
-        payer_id = int(payer_id_s)
-        target_id = int(target_id_s)
-        
-        kick_user(bot, chat_id, target_id)
-        target_name = get_name_by_id(bot, chat_id, target_id)
-        bot.send_message(chat_id, f"👢 {target_name}, выйди и зайди нормально")
-        
-    elif action == "ban:permanent":
-        _, chat_id_s, payer_id_s, target_id_s = parts
-        chat_id = int(chat_id_s)
-        payer_id = int(payer_id_s)
-        target_id = int(target_id_s)
-        
-        ban_user(bot, chat_id, target_id)
-        target_name = get_name_by_id(bot, chat_id, target_id)
-        bot.send_message(chat_id, f"🚫 {target_name}, спердоляй с чату")
-        
-    elif action == "ban:temporary":
-        _, chat_id_s, payer_id_s, target_id_s, hours_s = parts
-        chat_id = int(chat_id_s)
-        payer_id = int(payer_id_s)
-        target_id = int(target_id_s)
-        hours = int(hours_s)
-        
-        until_date = datetime.utcnow() + timedelta(hours=hours)
-        ban_user(bot, chat_id, target_id, until_date=until_date)
-        target_name = get_name_by_id(bot, chat_id, target_id)
-        bot.send_message(chat_id, f"🚫 {target_name}, спердоляй с чату на {hours} часов")
-
-
-# --------- ЗАЩИТА АДМИНА ---------
-def check_and_save_admin(bot, chat_id):
-    """Проверяет, не забанен ли админ, и разбанит если надо"""
-    try:
-        member = bot.get_chat_member(chat_id, ADMIN_ID)
-        if member.status in ['left', 'kicked']:
+        if user.id == ADMIN_ID and status in ["kicked", "banned", "left"]:
             unban_user(bot, chat_id, ADMIN_ID)
+
             try:
-                invite = bot.create_chat_invite_link(chat_id, member_limit=1)
-                bot.send_message(ADMIN_ID, f"🛡️ Меня разбанили в чате {chat_id}\nСсылка для входа: {invite.invite_link}")
-                bot.send_message(chat_id, "👑 Админ вернулся")
+                link = bot.export_chat_invite_link(chat_id)
+                bot.send_message(chat_id, f"👑 господин вернулся\n{link}")
             except:
-                pass
+                bot.send_message(chat_id, "👑 господин вернулся")
     except:
         pass
 
 
-# --------- ОСНОВНАЯ ЛОГИКА ---------
+# =========================
+# PAYMENT HANDLER
+# =========================
+def handle_successful(bot, message):
+    payload = message.successful_payment.invoice_payload
+
+    # ===== UNBAN =====
+    if payload.startswith("unban:"):
+        _, chat_id, target_id = payload.split(":")
+        unban_user(bot, int(chat_id), int(target_id))
+
+        bot.send_message(
+            int(chat_id),
+            "господин решил тебя помиловать, целуй ему ноги пес"
+        )
+        return
+
+    # ===== SHIELD =====
+    if payload.startswith("shield:"):
+        _, chat_id, user_id = payload.split(":")
+
+        data = load_shields()
+        data.setdefault(chat_id, {})
+        data[chat_id][user_id] = True
+        save_shields(data)
+
+        bot.send_message(int(chat_id), "🛡 щит активирован (1 бан)")
+        return
+
+
+# =========================
+# MAIN HANDLER
+# =========================
 def handle(bot, message):
-    # Проверяем защиту админа при каждом сообщении
-    check_and_save_admin(bot, message.chat.id)
-    
-    text = (message.text or "").strip()
+    text = (message.text or "").lower().strip()
     if not text:
         return
-    
-    # Разбираем команду (русские буквы, без /)
-    cmd_parts = text.lower().split()
-    cmd = cmd_parts[0]
-    
-    # Определяем, кто отправитель
-    is_admin = (message.from_user.id == ADMIN_ID)
+
+    parts = text.split()
+    cmd = parts[0]
+
     prices = load_prices()
-    
-    # --------- КИК ---------
+
+    # ================= KICK =================
     if cmd == "кик":
         if not message.reply_to_message:
-            bot.reply_to(message, "⚠️ Ответь на сообщение того, кого хочешь кикнуть")
             return
-        
-        target_id = message.reply_to_message.from_user.id
-        target_name = get_name(message.reply_to_message.from_user)
-        
-        # Нельзя кикнуть самого бота
-        if target_id == bot.get_me().id:
-            bot.reply_to(message, "❌ Нельзя кикнуть бота")
-            return
-        
-        # Бесплатно для админа
-        if is_admin:
-            kick_user(bot, message.chat.id, target_id)
-            bot.send_message(message.chat.id, f"👢 {target_name}, выйди и зайди нормально")
-            return
-        
-        # Платно для остальных
-        price = prices["kick"]
-        if price <= 0:
-            kick_user(bot, message.chat.id, target_id)
-            bot.send_message(message.chat.id, f"👢 {target_name}, выйди и зайди нормально")
-            return
-        
-        try:
-            prices_list = [LabeledPrice(label="Кик", amount=price)]
-            bot.send_invoice(
-                chat_id=message.chat.id,
-                title=f"Кик {target_name}",
-                description=f"{get_name(message.from_user)} хочет кикнуть {target_name}",
-                invoice_payload=f"ban:kick:{message.chat.id}:{message.from_user.id}:{target_id}",
-                provider_token=PROVIDER_TOKEN,
-                currency="XTR",
-                prices=prices_list
-            )
-        except Exception as e:
-            bot.reply_to(message, f"❌ Ошибка: {e}")
+
+        target = message.reply_to_message.from_user
+        bot.kick_chat_member(message.chat.id, target.id)
+
+        bot.send_message(message.chat.id, "выйди и зайди нормально")
         return
-    
-    # --------- БАН ---------
+
+    # ================= BAN =================
     if cmd == "бан":
         if not message.reply_to_message:
-            bot.reply_to(message, "⚠️ Ответь на сообщение того, кого хочешь забанить")
             return
-        
-        target_id = message.reply_to_message.from_user.id
-        target_name = get_name(message.reply_to_message.from_user)
-        
-        # Нельзя забанить бота
-        if target_id == bot.get_me().id:
-            bot.reply_to(message, "❌ Нельзя забанить бота")
+
+        target = message.reply_to_message.from_user
+
+        # защита щитом
+        if has_shield(message.chat.id, target.id):
+            consume_shield(message.chat.id, target.id)
+            bot.send_message(message.chat.id, "🛡 щит сработал, бан отменён")
             return
-        
-        # Проверяем, есть ли время (бан X часов)
-        hours = None
-        if len(cmd_parts) > 1:
-            try:
-                hours = int(cmd_parts[1])
-                if hours <= 0:
+
+        # админ — бесплатно
+        if is_admin(message.from_user.id):
+            hours = None
+            if len(parts) > 1:
+                try:
+                    hours = int(parts[1])
+                except:
                     hours = None
-            except:
-                hours = None
-        
-        # Бесплатно для админа
-        if is_admin:
-            if hours:
-                until_date = datetime.utcnow() + timedelta(hours=hours)
-                ban_user(bot, message.chat.id, target_id, until_date=until_date)
-                bot.send_message(message.chat.id, f"🚫 {target_name}, спердоляй с чату на {hours} часов")
-                # Запускаем авторазбан через часы
-                asyncio.create_task(auto_unban(bot, message.chat.id, target_id, hours*3600, target_name, get_name(message.from_user)))
-            else:
-                ban_user(bot, message.chat.id, target_id)
-                bot.send_message(message.chat.id, f"🚫 {target_name}, спердоляй с чату")
+
+            ban_user(bot, message.chat.id, target.id, hours)
+            bot.send_message(message.chat.id, "спердоляй с чату")
             return
-        
-        # Платно для остальных
-        if hours:
-            price_per_hour = prices["ban_hour"]
-            total_price = price_per_hour * hours
-            
-            if total_price <= 0:
-                until_date = datetime.utcnow() + timedelta(hours=hours)
-                ban_user(bot, message.chat.id, target_id, until_date=until_date)
-                bot.send_message(message.chat.id, f"🚫 {target_name}, спердоляй с чату на {hours} часов")
-                asyncio.create_task(auto_unban(bot, message.chat.id, target_id, hours*3600, target_name, get_name(message.from_user)))
-                return
-            
-            try:
-                prices_list = [LabeledPrice(label=f"Бан на {hours} ч", amount=total_price)]
-                bot.send_invoice(
-                    chat_id=message.chat.id,
-                    title=f"Бан {target_name} на {hours} ч",
-                    description=f"{get_name(message.from_user)} хочет забанить {target_name} на {hours} часов",
-                    invoice_payload=f"ban:temporary:{message.chat.id}:{message.from_user.id}:{target_id}:{hours}",
-                    provider_token=PROVIDER_TOKEN,
-                    currency="XTR",
-                    prices=prices_list
-                )
-            except Exception as e:
-                bot.reply_to(message, f"❌ Ошибка: {e}")
-        else:
-            price = prices["ban"]
-            if price <= 0:
-                ban_user(bot, message.chat.id, target_id)
-                bot.send_message(message.chat.id, f"🚫 {target_name}, спердоляй с чату")
-                return
-            
-            try:
-                prices_list = [LabeledPrice(label="Бан навсегда", amount=price)]
-                bot.send_invoice(
-                    chat_id=message.chat.id,
-                    title=f"Бан {target_name}",
-                    description=f"{get_name(message.from_user)} хочет забанить {target_name} навсегда",
-                    invoice_payload=f"ban:permanent:{message.chat.id}:{message.from_user.id}:{target_id}",
-                    provider_token=PROVIDER_TOKEN,
-                    currency="XTR",
-                    prices=prices_list
-                )
-            except Exception as e:
-                bot.reply_to(message, f"❌ Ошибка: {e}")
+
+        # платный бан
+        bot.send_invoice(
+            chat_id=message.chat.id,
+            title="Бан",
+            description="забанить пользователя",
+            invoice_payload=f"ban:{message.chat.id}:{target.id}",
+            provider_token=PROVIDER_TOKEN,
+            currency="XTR",
+            prices=[LabeledPrice(label="ban", amount=prices["ban"])]
+        )
         return
-    
-    # --------- РАЗБАН ---------
+
+    # ================= UNBAN =================
     if cmd == "разбан":
         if not message.reply_to_message:
-            bot.reply_to(message, "⚠️ Ответь на сообщение того, кого хочешь разбанить")
             return
-        
-        target_id = message.reply_to_message.from_user.id
-        target_name = get_name(message.reply_to_message.from_user)
-        
-        # Бесплатно для админа
-        if is_admin:
-            unban_user(bot, message.chat.id, target_id)
-            bot.send_message(
-                message.chat.id,
-                f"🔓 {target_name}, господин {get_name(message.from_user)} решил тебя помиловать, целуй ему ноги пес"
-            )
+
+        target = message.reply_to_message.from_user
+
+        if is_admin(message.from_user.id):
+            unban_user(bot, message.chat.id, target.id)
+            bot.send_message(message.chat.id, "господин решил тебя помиловать, целуй ему ноги пес")
             return
-        
-        # Платно 20 звезд
-        try:
-            prices_list = [LabeledPrice(label="Разбан", amount=20)]
-            bot.send_invoice(
-                chat_id=message.chat.id,
-                title=f"Разбан {target_name}",
-                description=f"{get_name(message.from_user)} хочет разбанить {target_name}",
-                invoice_payload=f"unban:{message.chat.id}:{message.from_user.id}:{target_id}",
-                provider_token=PROVIDER_TOKEN,
-                currency="XTR",
-                prices=prices_list
-            )
-        except Exception as e:
-            bot.reply_to(message, f"❌ Ошибка: {e}")
+
+        bot.send_invoice(
+            chat_id=message.chat.id,
+            title="Разбан",
+            description="снять бан",
+            invoice_payload=f"unban:{message.chat.id}:{target.id}",
+            provider_token=PROVIDER_TOKEN,
+            currency="XTR",
+            prices=[LabeledPrice(label="unban", amount=prices["unban"])]
+        )
         return
-    
-    # --------- АДМИН-КОМАНДЫ ДЛЯ ЦЕН (только /) ---------
-    if text.startswith("/kickprice") and message.from_user.id == ADMIN_ID:
-        parts = text.split()
-        if len(parts) != 2:
-            bot.reply_to(message, "❗ Используй: /kickprice 10")
+
+    # ================= SHIELD BUY =================
+    if cmd == "щит":
+        if not message.reply_to_message:
             return
-        try:
-            new_price = int(parts[1])
-            prices = load_prices()
-            prices["kick"] = new_price
-            save_prices(prices)
-            bot.reply_to(message, f"✅ Цена кика: {new_price} ⭐")
-        except:
-            bot.reply_to(message, "❗ Ошибка")
+
+        target = message.reply_to_message.from_user
+
+        bot.send_invoice(
+            chat_id=message.chat.id,
+            title="Щит",
+            description="защита от 1 бана",
+            invoice_payload=f"shield:{message.chat.id}:{target.id}",
+            provider_token=PROVIDER_TOKEN,
+            currency="XTR",
+            prices=[LabeledPrice(label="shield", amount=prices["shield"])]
+        )
         return
-    
-    if text.startswith("/banprice") and message.from_user.id == ADMIN_ID:
-        parts = text.split()
-        if len(parts) != 2:
-            bot.reply_to(message, "❗ Используй: /banprice 15")
-            return
-        try:
-            new_price = int(parts[1])
-            prices = load_prices()
-            prices["ban"] = new_price
-            save_prices(prices)
-            bot.reply_to(message, f"✅ Цена вечного бана: {new_price} ⭐")
-        except:
-            bot.reply_to(message, "❗ Ошибка")
-        return
-    
-    if text.startswith("/banpricer") and message.from_user.id == ADMIN_ID:
-        parts = text.split()
-        if len(parts) != 2:
-            bot.reply_to(message, "❗ Используй: /banpricer 3")
-            return
-        try:
-            new_price = int(parts[1])
-            prices = load_prices()
-            prices["ban_hour"] = new_price
-            save_prices(prices)
-            bot.reply_to(message, f"✅ Цена за час бана: {new_price} ⭐")
-        except:
-            bot.reply_to(message, "❗ Ошибка")
+
+    # ================= PRICE =================
+    if cmd == "kickprice" and is_admin(message.from_user.id):
+        prices["kick"] = int(parts[1])
+        save_prices(prices)
+
+    if cmd == "banprice" and is_admin(message.from_user.id):
+        prices["ban"] = int(parts[1])
+        save_prices(prices)
+
+    if cmd == "banpricer" and is_admin(message.from_user.id):
+        prices["unban"] = int(parts[1])
+        save_prices(prices)
