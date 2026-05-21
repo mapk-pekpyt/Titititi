@@ -15,6 +15,7 @@ from . import minus
 from . import say
 from . import beer
 from . import cartel_war_game
+from . import ban
 
 # ===========================
 # Словарь плагинов для main.py
@@ -32,4 +33,5 @@ PLUGINS = {
     "say": say,
     "beer": beer,
     "cartel_war_game": cartel_war_game,
+    "ban": ban,
 }
