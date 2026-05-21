@@ -1,7 +1,12 @@
 import os
 import telebot
 from triggers import TRIGGERS
-from plugins import sisi, hui, cartel_war_game, klitor, mut, top_plugin, kto, bust_price, cannabis_game, minus, say, beer
+
+from plugins import (
+    sisi, hui, cartel_war_game, klitor, mut,
+    top_plugin, kto, bust_price, cannabis_game,
+    minus, say, beer, ban
+)
 
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
@@ -63,13 +68,23 @@ def top_callbacks(call):
         print(f"Ошибка handle_top_callback: {e}")
 
 # =====================================================
+# 👮 CHAT MEMBER EVENTS (бан/защита админа)
+# =====================================================
+@bot.chat_member_handler()
+def chat_member(update):
+    try:
+        ban.handle_chat_member_update(bot, update)
+    except Exception as e:
+        print(f"Ошибка chat_member: {e}")
+
+# =====================================================
 # 🔥 ГЛАВНЫЙ ОБРАБОТЧИК
 # =====================================================
 @bot.message_handler(content_types=["text", "photo"])
 def handle_all(message):
     plugin_called = False
 
-    # ---------- Счёт сообщений для топа общения ----------
+    # ---------- Счёт сообщений для топа ----------
     if message.content_type == "text":
         try:
             top_plugin.count_message(message.chat.id, message.from_user)
@@ -103,7 +118,6 @@ def handle_all(message):
             except Exception as e:
                 print(f"Ошибка handle команды {plugin_name}: {e}")
         else:
-            # обычный текст → на все плагины
             for plugin in PLUGINS.values():
                 if hasattr(plugin, "handle"):
                     try:
