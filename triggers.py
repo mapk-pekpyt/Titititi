@@ -129,4 +129,7 @@ TRIGGERS = {
     "kickprice": "ban",
     "banprice": "ban",
     "banpricer": "ban",
+    
+    
+    "удалить": "delete",
 }
