@@ -4,25 +4,22 @@ from datetime import datetime, timedelta
 from telebot.types import LabeledPrice
 
 DATA_DIR = "data"
-PRICE_FILE = f"{DATA_DIR}/ban_prices.json"
+PRICE_FILE = f"{DATA_DIR}/prices.json"
 SHIELD_FILE = f"{DATA_DIR}/shields.json"
 
 ADMIN_ID = 5791171535
 PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
 
-# =========================
-# DEFAULT PRICES
-# =========================
+# ================= PRICES =================
 DEFAULT = {
     "kick": 1,
-    "ban_hour": 2,   # цена за 1 час
+    "ban": 3,
+    "ban_hour": 2,
     "unban": 20,
     "shield": 5
 }
 
-# =========================
-# FILES
-# =========================
+# ================= FILES =================
 def ensure():
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -51,10 +48,8 @@ def shields():
 def save_shields(s):
     save(SHIELD_FILE, s)
 
-# =========================
-# HELPERS
-# =========================
-def cmd(text):
+# ================= HELPERS =================
+def norm(text):
     return (text or "").lower().split()[0].split("@")[0].replace("/", "")
 
 def is_admin(uid):
@@ -64,7 +59,7 @@ def has_shield(chat_id, user_id):
     s = shields()
     return str(chat_id) in s and str(user_id) in s[str(chat_id)]
 
-def consume_shield(chat_id, user_id):
+def use_shield(chat_id, user_id):
     s = shields()
     c, u = str(chat_id), str(user_id)
     if c in s and u in s[c]:
@@ -73,16 +68,11 @@ def consume_shield(chat_id, user_id):
             del s[c]
         save_shields(s)
 
-# =========================
-# KICK (instant return)
-# =========================
+# ================= ACTIONS =================
 def kick(bot, chat_id, user_id):
     bot.ban_chat_member(chat_id, user_id)
     bot.unban_chat_member(chat_id, user_id)
 
-# =========================
-# BAN
-# =========================
 def ban(bot, chat_id, user_id, hours=None):
     until = None
     if hours:
@@ -92,9 +82,7 @@ def ban(bot, chat_id, user_id, hours=None):
 def unban(bot, chat_id, user_id):
     bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
 
-# =========================
-# CHAT JOIN EVENT
-# =========================
+# ================= JOIN EVENT =================
 def handle_chat_member_update(bot, update):
     try:
         if not update or not update.new_chat_member:
@@ -105,19 +93,18 @@ def handle_chat_member_update(bot, update):
 
         if update.new_chat_member.status == "member":
             bot.send_message(chat_id,
-                f"👑 господин тебя помиловал, можешь дышать свободно, {user.first_name}")
+                f"👑 тебя помиловали, можешь заходить нормально, {user.first_name}")
     except:
         pass
 
-# =========================
-# PAYMENTS
-# =========================
+# ================= PAYMENTS =================
 def handle_successful(bot, message):
     payload = message.successful_payment.invoice_payload
 
     # UNBAN
     if payload.startswith("unban:"):
         _, chat_id, user_id = payload.split(":")
+
         unban(bot, int(chat_id), int(user_id))
 
         link = None
@@ -127,11 +114,11 @@ def handle_successful(bot, message):
             link = "нет ссылки"
 
         bot.send_message(int(chat_id),
-            "господин решил тебя помиловать, целуй ему ноги, пёс")
+            "господин тебя помиловал")
 
         try:
             bot.send_message(int(user_id),
-                f"ты разбанен 👑\nвот вход: {link}")
+                f"ты разбанен 👑\nвход: {link}")
         except:
             pass
         return
@@ -146,12 +133,24 @@ def handle_successful(bot, message):
         bot.send_message(int(chat_id), "🛡 щит активирован")
         return
 
-# =========================
-# MAIN HANDLER
-# =========================
+    # BAN PAYMENT
+    if payload.startswith("ban:"):
+        _, chat_id, user_id, hours = payload.split(":")
+
+        hours = int(hours)
+        if hours <= 0:
+            hours = None
+
+        ban(bot, int(chat_id), int(user_id), hours)
+
+        bot.send_message(int(chat_id),
+            "ну всё, допрыгался лошара, посиди в бане")
+        return
+
+# ================= MAIN =================
 def handle(bot, message):
     text = message.text or ""
-    c = cmd(text)
+    c = norm(text)
     p = prices()
 
     if not c:
@@ -164,19 +163,19 @@ def handle(bot, message):
         if not message.reply_to_message:
             return
 
-        target = message.reply_to_message.from_user
+        t = message.reply_to_message.from_user
 
         if is_admin(message.from_user.id):
-            kick(bot, message.chat.id, target.id)
+            kick(bot, message.chat.id, t.id)
             bot.send_message(message.chat.id,
-                "выйди и зайди нормально, не позорься")
+                "выйди и зайди нормально")
             return
 
         bot.send_invoice(
             message.chat.id,
-            "Кик",
-            "выгнать человека",
-            f"kick:{message.chat.id}:{target.id}",
+            "кик",
+            "выкинуть из чата",
+            f"kick:{message.chat.id}:{t.id}",
             PROVIDER_TOKEN,
             "XTR",
             [LabeledPrice("kick", p["kick"])]
@@ -188,40 +187,35 @@ def handle(bot, message):
         if not message.reply_to_message:
             return
 
-        target = message.reply_to_message.from_user
+        t = message.reply_to_message.from_user
 
-        if has_shield(message.chat.id, target.id):
-            consume_shield(message.chat.id, target.id)
-            bot.send_message(message.chat.id, "🛡 щит спас тебя, повезло")
+        # shield
+        if has_shield(message.chat.id, t.id):
+            use_shield(message.chat.id, t.id)
+            bot.send_message(message.chat.id, "🛡 щит спас")
             return
 
-        # admin free
+        hours = None
+        if len(parts) > 1:
+            try:
+                hours = int(parts[1])
+            except:
+                hours = None
+
         if is_admin(message.from_user.id):
-            hours = None
-            if len(parts) > 1:
-                try:
-                    hours = int(parts[1])
-                except:
-                    pass
-
-            ban(bot, message.chat.id, target.id, hours)
-
-            msg = "ну всё, допрыгался лошара, посиди в бане"
-            if hours:
-                msg += f" {hours} час(а)"
-
-            bot.send_message(message.chat.id, msg)
+            ban(bot, message.chat.id, t.id, hours)
+            bot.send_message(message.chat.id,
+                f"ну всё, посиди в бане {hours or '∞'} часов")
             return
 
-        # paid ban
         bot.send_invoice(
             message.chat.id,
-            "Бан",
+            "бан",
             "бан по часам",
-            f"ban:{message.chat.id}:{target.id}",
+            f"ban:{message.chat.id}:{t.id}:{hours or 0}",
             PROVIDER_TOKEN,
             "XTR",
-            [LabeledPrice("ban_hour", p["ban_hour"])]
+            [LabeledPrice("ban", p["ban_hour"])]
         )
         return
 
@@ -230,18 +224,19 @@ def handle(bot, message):
         if not message.reply_to_message:
             return
 
-        target = message.reply_to_message.from_user
+        t = message.reply_to_message.from_user
 
         if is_admin(message.from_user.id):
-            unban(bot, message.chat.id, target.id)
-            bot.send_message(message.chat.id, "господин тебя простил")
+            unban(bot, message.chat.id, t.id)
+            bot.send_message(message.chat.id,
+                "господин тебя помиловал")
             return
 
         bot.send_invoice(
             message.chat.id,
-            "Разбан",
+            "разбан",
             "снятие бана",
-            f"unban:{message.chat.id}:{target.id}",
+            f"unban:{message.chat.id}:{t.id}",
             PROVIDER_TOKEN,
             "XTR",
             [LabeledPrice("unban", p["unban"])]
@@ -253,21 +248,21 @@ def handle(bot, message):
         if not message.reply_to_message:
             return
 
-        target = message.reply_to_message.from_user
+        t = message.reply_to_message.from_user
 
         bot.send_invoice(
             message.chat.id,
-            "Щит",
+            "щит",
             "защита от бана",
-            f"shield:{message.chat.id}:{target.id}",
+            f"shield:{message.chat.id}:{t.id}",
             PROVIDER_TOKEN,
             "XTR",
             [LabeledPrice("shield", p["shield"])]
         )
         return
 
-    # ================= PRICE =================
-    if c in ["kickprice", "banhourprice", "unbanprice", "shieldprice"]:
+    # ================= PRICES =================
+    if c in ["kickprice", "banprice", "banpricer", "unbanprice", "shieldprice"]:
         if not is_admin(message.from_user.id):
             return
 
@@ -276,8 +271,8 @@ def handle(bot, message):
 
         if c == "kickprice":
             p["kick"] = val
-        if c == "banhourprice":
-            p["ban_hour"] = val
+        if c in ["banprice", "banpricer"]:
+            p["ban"] = val
         if c == "unbanprice":
             p["unban"] = val
         if c == "shieldprice":
