@@ -27,6 +27,7 @@ PLUGINS = {
     "beer": beer,
     "cartel_war_game": cartel_war_game,
     "ban": ban,
+    "delete": delete,
 }
 
 # =====================================================
