@@ -16,6 +16,7 @@ from . import say
 from . import beer
 from . import cartel_war_game
 from . import ban
+from . import delete
 
 # ===========================
 # Словарь плагинов для main.py
