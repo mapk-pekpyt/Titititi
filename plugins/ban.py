@@ -12,11 +12,11 @@ PROVIDER_TOKEN = "5775769170:LIVE:TG_l0PjhdRBm3za7XB9t3IeFusA"
 
 # ================= PRICES =================
 DEFAULT = {
-    "kick": 1,
-    "ban": 3,
-    "ban_hour": 2,
+    "kick": 15,
+    "ban": 30,
+    "ban_hour": 10,
     "unban": 20,
-    "shield": 5
+    "shield": 50
 }
 
 # ================= FILES =================
